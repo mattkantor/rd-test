@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "company-footprint"
+version = "0.1.0"
+description = "Evidence-first company footprint scanner and agent skills"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+llm = ["langchain", "langchain-openai"]
+web = ["fastapi[standard]", "langchain", "langchain-openai"]
+
+[project.scripts]
+companyscan = "companyscan.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+companyscan = ["views/templates/*.html", "views/static/*", "views/report/*", "skills/*/*.md", "skills/*/references/*.md"]

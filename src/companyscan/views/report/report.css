@@ -1,0 +1,120 @@
+/* Print design for analysis reports: pandoc HTML -> headless Chrome PDF. Edit here to restyle every report. */
+:root {
+  --ink: #16181d;
+  --muted: #5d6470;
+  --rule: #dfe2e7;
+  --wash: #f5f6f8;
+  --accent: #2b50d6;
+  --pass: #1d7a46;
+  --warn: #a45f00;
+  --fail: #b3261e;
+  --unknown: #5d6470;
+}
+
+@page {
+  size: Letter;
+  margin: 20mm 18mm 22mm;
+  @bottom-left { content: string(doc-title); font: 8pt -apple-system, "Helvetica Neue", Arial, sans-serif; color: #8a909b; }
+  @bottom-right { content: counter(page) " / " counter(pages); font: 8pt -apple-system, "Helvetica Neue", Arial, sans-serif; color: #8a909b; }
+}
+@page :first {
+  margin-top: 0;
+  @bottom-left { content: none; }
+  @bottom-right { content: none; }
+}
+
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  font: 400 10.5pt/1.55 -apple-system, "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+  color: var(--ink);
+  background: #fff;
+  hyphens: auto;
+}
+
+/* Cover: the report's first H1 and the evidence bullets under it. */
+h1:first-of-type {
+  string-set: doc-title content();
+  margin: 0 0 10mm;
+  padding: 48mm 12mm 12mm;
+  font-size: 30pt;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: #fff;
+  background: var(--ink);
+  border-bottom: 3mm solid var(--accent);
+}
+h1:first-of-type + ul {
+  margin: 0 0 8mm;
+  padding: 4mm 12mm;
+  list-style: none;
+  font-size: 9pt;
+  color: var(--muted);
+  background: var(--wash);
+  border-radius: 2mm;
+}
+
+h2 {
+  break-before: page;
+  margin: 0 0 4mm;
+  padding-bottom: 2mm;
+  font-size: 18pt;
+  letter-spacing: -0.01em;
+  border-bottom: 1.5pt solid var(--ink);
+}
+h1:first-of-type ~ h2:first-of-type { break-before: auto; }
+h3 { margin: 7mm 0 2mm; font-size: 12.5pt; color: var(--accent); }
+h4 { margin: 5mm 0 1.5mm; font-size: 10.5pt; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+h2, h3, h4 { break-after: avoid; }
+
+p, li { orphans: 3; widows: 3; }
+li { margin-bottom: 1.5mm; }
+ol > li::marker { font-weight: 700; color: var(--accent); }
+strong { font-weight: 650; }
+em { color: var(--muted); }
+a { color: var(--accent); text-decoration: none; }
+hr { border: 0; border-top: 1px solid var(--rule); margin: 6mm 0; }
+
+blockquote {
+  margin: 4mm 0;
+  padding: 2mm 5mm;
+  border-left: 1mm solid var(--accent);
+  background: var(--wash);
+  color: #333a45;
+}
+
+code {
+  font: 8.5pt/1.4 "SF Mono", Menlo, monospace;
+  padding: 0.2mm 1mm;
+  background: var(--wash);
+  border-radius: 1mm;
+  overflow-wrap: anywhere;
+}
+pre { padding: 3mm; background: var(--wash); border-radius: 1.5mm; white-space: pre-wrap; break-inside: avoid; }
+pre code { padding: 0; background: none; }
+
+table { width: 100%; margin: 4mm 0; border-collapse: collapse; font-size: 9pt; break-inside: auto; }
+thead { display: table-header-group; }
+tr { break-inside: avoid; }
+th { text-align: left; font-weight: 650; border-bottom: 1.5pt solid var(--ink); padding: 1.5mm 2mm; }
+td { vertical-align: top; border-bottom: 1px solid var(--rule); padding: 1.5mm 2mm; }
+tbody tr:nth-child(even) td { background: #fafbfc; }
+
+/* Verdict and severity badges (wrapped by report.badges). */
+.v {
+  display: inline-block;
+  padding: 0 1.4mm;
+  border-radius: 1mm;
+  font-size: 0.78em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  color: #fff;
+  background: var(--unknown);
+}
+.v-PASS, .v-LOW { background: var(--pass); }
+.v-WARNING, .v-MEDIUM { background: var(--warn); }
+.v-FAIL, .v-HIGH { background: var(--fail); }

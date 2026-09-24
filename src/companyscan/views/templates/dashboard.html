@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ m.header.host }} · Company Footprint</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='app.css') }}">
+  {% if job and job.state == "running" %}<meta http-equiv="refresh" content="3">{% endif %}
+</head>
+<body>
+{% macro val(v) -%}
+  {%- set h = v | href -%}
+  {%- if h %}<a href="{{ h }}" rel="noopener noreferrer" target="_blank">{{ v }}</a>
+  {%- elif v is none %}—
+  {%- elif v is sameas true %}yes{% elif v is sameas false %}no
+  {%- else %}<span class="{{ v | badge }}">{{ v }}</span>{% endif -%}
+{%- endmacro %}
+{% macro signed(x) %}{% if x is number %}{{ "%+d" | format(x) }}{% else %}—{% endif %}{% endmacro %}
+{% macro pct(x) %}{% if x is number %}{{ "%.0f%%" | format(x * 100) }}{% else %}—{% endif %}{% endmacro %}
+{% set icons = {"good": "✓", "warning": "!", "serious": "▲", "critical": "✕", "neutral": "•"} %}
+{# Status never rides on colour alone: every chip carries an icon and a word. Levels come from our code, never bundle data. #}
+{% macro chip(level, text) %}<span class="chip chip-{{ level }}"><span class="icon" aria-hidden="true">{{ icons.get(level, "•") }}</span>{{ text }}</span>{% endmacro %}
+{% macro plural_issues(n) %}{% if n %}{{ n }} issue{{ "s" if n != 1 }}{% else %}No issues{% endif %}{% endmacro %}
+{% macro tally(cards) -%}
+  {%- set flagged = cards | rejectattr("level", "in", ["good", "neutral"]) | list -%}
+  {%- set checked = cards | rejectattr("level", "equalto", "neutral") | list -%}
+  <small>{% if flagged %}{{ flagged | length }} to review{% elif checked %}all clear{% else %}not collected{% endif %}</small>
+{%- endmacro %}
+{% macro info_card(c) %}
+  <article class="info-card lvl-{{ c.level }}">
+    <header><h3>{{ c.title }}</h3>{{ chip(c.level, c.status) }}</header>
+    {% if c.facts %}<dl class="facts">{% for label, value in c.facts %}<dt>{{ label }}</dt><dd>{{ val(value) }}</dd>{% endfor %}</dl>{% endif %}
+    {% if c.text %}<details class="nested"><summary>{{ c.text_label }}</summary><pre>{{ c.text }}</pre></details>{% endif %}
+    {% if c.table %}<details class="nested"><summary>{{ c.table_label }} ({{ c.table.total }})</summary>{{ tbl(c.table) }}</details>{% endif %}
+    {% if c.note %}<p class="note">{{ c.note }}</p>{% endif %}
+    {% if c.file %}<a class="raw" href="{{ (bundle / c.file) | file_url }}">raw JSON</a>{% endif %}
+  </article>
+{% endmacro %}
+{% macro raw(rel) %}<a class="raw" href="{{ (bundle / rel) | file_url }}">raw JSON</a>{% endmacro %}
+{% macro tbl(t) -%}
+  {%- if t.rows %}
+  <div class="scroll"><table class="data">
+    <thead><tr>{% for c in t.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+    <tbody>{% for row in t.rows %}<tr>{% for v in row %}<td>{{ val(v) }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+  </table></div>
+  {%- if t.shown < t.total %}<small>Showing {{ t.shown }} of {{ t.total }}; see the raw file for the rest.</small>{% endif %}
+  {%- else %}<p class="muted">None.</p>{% endif -%}
+{%- endmacro %}
+{% macro described(d, rel) -%}
+  {%- if d.state %}<p class="muted">{{ d.state }}.</p>
+  {%- else %}
+    {%- if d.fields %}<dl class="fields">{% for k, v in d.fields.items() %}<dt>{{ k }}</dt><dd>{{ val(v) }}</dd>{% endfor %}</dl>{% endif %}
+    {%- if d.text %}<pre>{{ d.text }}</pre>{% endif %}
+    {%- for name, t in d.tables %}<h4>{{ name }}</h4>{{ tbl(t) }}{% endfor %}
+    {{ raw(rel) }}
+  {%- endif -%}
+{%- endmacro %}
+<main class="dash">
+  <p><a href="/">← All sites</a></p>
+  <h1>{{ m.header.host }}</h1>
+  <p class="meta">
+    {{ m.header.created_at | local_time }} · <span class="{{ m.header.status | badge }}">{{ m.header.status }}</span>
+    · {{ m.header.command }} · {{ m.header.counts.pages or 0 }} pages · max {{ m.header.max_pages }} pages, depth {{ m.header.max_depth }}
+    {% if m.header.dimensions %}· {{ m.header.dimensions | join(", ") }}{% endif %}
+    · errors: {{ m.header.errors }} · <a href="{{ (bundle / 'manifest.json') | file_url }}">manifest</a>
+  </p>
+  <p class="meta">Integrity:
+    {% if m.integrity == [] %}<span class="st st-pass">all artifacts verified</span>
+    {% elif m.integrity is string %}<span class="st st-unknown">{{ m.integrity }}</span>
+    {% else %}<span class="st st-fail">{{ m.integrity | length }} problem(s)</span>: {{ m.integrity | join("; ") }}{% endif %}
+  </p>
+
+  {% set kinds = {"crawl": "Crawl", "recrawl": "Re-crawl", "report": "Report"} %}
+  {% set running = job and job.state == "running" %}
+  {% if job %}
+  <section class="job job-{{ job.state }}">
+    {% if running %}
+      <h3>{{ kinds.get(job.kind, "Job") }} running · {% if job.steps %}step {{ job.step }} of {{ job.steps }}{% else %}starting…{% endif %}</h3>
+      <div class="bar"><div style="width: {{ percent }}%"></div></div>
+      <p>{{ job.label }}</p>
+      <small>Started {{ job.started | local_time }} · {{ percent }}% · refreshing every 3 seconds</small>
+    {% elif job.state == "done" %}
+      <p>✔ {{ kinds.get(job.kind, "Job") }} finished: {{ job.label }}
+        {% if job.kind in ("crawl", "recrawl") and job.run and job.run != bundle.name %}
+          → <a href="/run/{{ job.run | urlencode }}">View new run</a>{% endif %}</p>
+      {% if job.finished %}<small>Finished {{ job.finished | local_time }}</small>{% endif %}
+    {% else %}
+      <p class="st st-error">{{ kinds.get(job.kind, "Job") }} failed: {{ job.label }}</p>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <form class="recrawl" method="post" action="/recrawl">
+    <input type="hidden" name="dir" value="{{ bundle.name }}">
+    <input type="hidden" name="return_to" value="dashboard">
+    <button {% if running %}disabled{% endif %}>Re-crawl + report</button>
+    <small>Crawls again with every check (WCAG, analytics, AEO, social previews, security, fonts, AI reputation, Meta ads), then writes
+      the report and PDF for the new run. This run is kept. Expect a few minutes: AI reputation makes about 50 LLM calls,
+      and the report is one long LLM call.</small>
+  </form>
+
+  <section class="overview">
+    <div class="hero">
+      <p class="label">Needs attention</p>
+      <p class="hero-value">{{ m.attention | length }}</p>
+      <p class="chips">
+        {% for level in ("critical", "serious", "warning") %}{% set n = m.attention | selectattr("level", "equalto", level) | list | length %}
+          {% if n %}{{ chip(level, n ~ " " ~ level ~ ("s" if level == "warning" and n != 1 else "")) }}{% endif %}{% endfor %}
+        {% if not m.attention %}{{ chip("good", "Nothing flagged") }}{% endif %}
+      </p>
+    </div>
+    <div class="attention">
+      <h2>Anomalies</h2>
+      {% if m.attention %}
+      <ul>{% for a in m.attention %}<li><a href="{{ a.href }}">{{ chip(a.level, a.level | capitalize) }}<span>{{ a.text }}</span></a></li>{% endfor %}</ul>
+      {% else %}<p class="muted">No anomalies in the collected checks. Checks that weren't collected aren't counted.</p>{% endif %}
+    </div>
+  </section>
+
+  <section class="tiles">
+    {% for t in m.tiles %}
+    <a class="tile" href="{{ t.href }}">
+      <p class="label">{{ t.title }}</p>
+      <p class="value">{{ t.value }}</p>
+      {% if t.meter %}<div class="meter" title="{{ t.meter.pct }}%"><div style="width: {{ t.meter.pct }}%"></div></div>{% endif %}
+      <p class="sub">{{ t.sub }}</p>
+      {% if t.status %}{{ chip(t.level, t.status) }}{% endif %}
+    </a>
+    {% endfor %}
+  </section>
+
+  <details id="report" open><summary>Report &amp; findings</summary>
+    {% if m.report.md %}
+      <p><a href="{{ m.report.md | file_url }}">report.md</a>
+        {% if m.report.pdf %} · <a href="{{ m.report.pdf | file_url }}"><b>PDF</b></a>{% endif %}
+        {% if m.report.analysis %} · <a href="{{ m.report.analysis | file_url }}">analysis.json</a>{% endif %}</p>
+    {% else %}
+      <p class="muted">No report yet.</p>
+      <form method="post" action="/report"><input type="hidden" name="dir" value="{{ bundle.name }}"><input type="hidden" name="return_to" value="dashboard"><button {% if running %}disabled{% endif %}>Generate report</button></form>
+    {% endif %}
+    {% if m.report.findings %}
+      <table class="data"><thead><tr><th>ID</th><th>Verdict</th><th>Finding</th></tr></thead><tbody>
+      {% for f in m.report.findings %}<tr><td>{{ f.id }}</td><td>{{ val(f.verdict) }}</td><td>{{ f.title }}</td></tr>{% endfor %}
+      </tbody></table>
+    {% endif %}
+  </details>
+
+  <section id="pages" class="pages">
+    <div class="pages-head">
+      <h2>Pages <small>{{ m.pages | length }} crawled · each card groups everything checked on that page</small></h2>
+      <nav class="sorts">Sort:
+        {% for key, label in m.sorts %}
+          <a href="?sort={{ key }}#pages"{% if m.sort == key %} class="on"{% endif %}>{{ label }}</a>
+        {% endfor %}
+      </nav>
+    </div>
+    <div class="page-grid">
+      {% for p in m.pages %}
+      <article class="page-card lvl-{{ p.level }}">
+        <header>
+          <p class="label">{{ p.label or "page" }}{% if p.depth is not none %} · depth {{ p.depth }}{% endif %} · #{{ p.id }}</p>
+          <h3>{{ p.title or p.path }}</h3>
+          <p class="path">{{ val(p.url) if p.url else p.path }}</p>
+          {{ chip(p.level, plural_issues(p.issues)) }}
+        </header>
+        <ul class="checks">
+          {% for a in p.areas %}<li>{{ chip(a.level, a.name) }}<span>{{ a.summary }}</span></li>{% endfor %}
+        </ul>
+        <details class="nested"><summary>Details</summary>
+          {% for a in p.areas if a.details %}<h4>{{ a.name }}</h4><ul class="detail-list">{% for d in a.details %}<li>{{ d }}</li>{% endfor %}</ul>{% endfor %}
+          <p class="files"><a href="{{ (bundle / p.json) | file_url }}">page JSON</a>{% if p.content %} · <a href="{{ (bundle / p.content) | file_url }}">page text</a>{% endif %}</p>
+        </details>
+      </article>
+      {% endfor %}
+    </div>
+    <details class="nested"><summary>Table view</summary>
+      <div class="scroll"><table class="data"><thead><tr><th>#</th><th>Page</th><th>Type</th><th>Status</th><th>Issues</th>
+        {% for a in m.areas %}<th>{{ a }}</th>{% endfor %}</tr></thead>
+      <tbody>{% for p in m.pages %}<tr>
+        <td>{{ p.id }}</td><td>{{ val(p.url) if p.url else p.path }}</td><td>{{ val(p.label) }}</td><td>{{ val(p.status) }}</td><td>{{ p.issues }}</td>
+        {% for a in p.areas %}<td>{{ icons.get(a.level) }} {{ a.problems or "" }}</td>{% endfor %}
+      </tr>{% endfor %}</tbody></table></div>
+    </details>
+  </section>
+
+  <details id="site" class="panel" open><summary>Site-wide {{ tally(m.site) }}</summary>
+    <div class="info-grid">{% for c in m.site %}{{ info_card(c) }}{% endfor %}</div>
+  </details>
+
+  <details id="meta_ads" class="panel"><summary>Meta ads {{ tally([m.meta_ads]) }}</summary>
+    <div class="info-grid">{{ info_card(m.meta_ads) }}</div>
+  </details>
+
+  {% set r = m.reputation %}
+  <details id="reputation" class="panel"><summary>AI reputation</summary>
+    {% if r.source %}<p class="note">From the separate reputation run <a href="{{ (bundle.parent / r.source.dir / 'manifest.json') | file_url }}">{{ r.source.dir }}</a>
+      · {{ r.source.created_at | local_time }} · model {{ r.source.model }}. This crawl didn't include the AI reputation check.</p>{% endif %}
+    {% if r.state %}<p class="muted">{{ r.state }}.</p>
+    {% elif r.unknown is defined %}<p><span class="st st-unknown">UNKNOWN</span>: {{ r.unknown }}</p>
+    {% elif r.legacy is defined %}
+      <p class="muted">No ranking in this run.</p>
+      <h4>Branded answer</h4><pre>{{ r.legacy.answer }}</pre>
+      <h4>Competitors</h4>{{ tbl(r.legacy.competitors) }}
+    {% else %}{% set s = r.scores %}
+      <div class="stat-row">
+        <div class="stat"><p class="label">Rank</p><p class="value">{% if s.rank %}#{{ s.rank }} of {{ s.of }}{% else %}Unranked{% endif %}</p>
+          <p class="sub">{% if s.rank %}among companies named{% else %}{{ s.of }} companies named, not you{% endif %}</p></div>
+        <div class="stat"><p class="label">Mention rate</p><p class="value">{{ pct(s.mention_rate) }}</p>
+          <p class="sub">of {{ s.answers_scored }} buyer answers{% if s.answers_total != s.answers_scored %} ({{ s.answers_total }} asked){% endif %}</p></div>
+        <div class="stat"><p class="label">Share of voice</p><p class="value">{{ pct(s.share_of_voice) }}</p>
+          <p class="sub">of all company mentions</p></div>
+        <div class="stat"><p class="label">Sentiment</p><p class="value">{{ signed(s.sentiment.score) }}</p>
+          <p class="sub">branded {{ signed(s.sentiment.branded.score) }} · unbranded {{ signed(s.sentiment.unbranded.score) }} · n={{ s.sentiment.n }}</p></div>
+      </div>
+      {% if s.diverging %}
+      <figure class="sentiment">
+        <figcaption>Sentiment scale <small>−100 negative · 0 neutral · +100 positive</small></figcaption>
+        <div class="diverge" title="Sentiment {{ signed(s.sentiment.score) }} (n={{ s.sentiment.n }})">
+          <span class="fill {{ s.diverging.sign }}" style="left: {{ s.diverging.left }}%; width: {{ s.diverging.width }}%"></span><span class="mid"></span>
+        </div>
+      </figure>
+      {% endif %}
+      <h4>Leaderboard: mentions across buyer answers</h4>
+      <figure class="bars">
+        {% for row in s.leaderboard[:10] %}
+        <div class="bar-row{% if row.is_target %} is-target{% endif %}" title="{{ row.company }}: {{ row.mentions }} mentions, average position {{ row.avg_position }}">
+          <span class="bar-label">{{ loop.index }}. {{ row.company }}{% if row.is_target %} (you){% endif %}</span>
+          <span class="bar-track"><span class="bar-fill" style="width: {{ row.width }}%"></span></span>
+          <span class="bar-value">{{ row.mentions }}</span>
+        </div>
+        {% endfor %}
+        {% if s.leaderboard | length > 10 %}<small>Top 10 of {{ s.leaderboard | length }}; the table view lists all.</small>{% endif %}
+      </figure>
+      <details class="nested"><summary>Table view</summary>
+        <table class="data"><thead><tr><th>#</th><th>Company</th><th>Mentions</th><th>Avg position</th></tr></thead><tbody>
+        {% for row in s.leaderboard %}<tr{% if row.is_target %} class="target"{% endif %}><td>{{ loop.index }}</td><td>{{ row.company }}</td><td>{{ row.mentions }}</td><td>{{ row.avg_position }}</td></tr>{% endfor %}
+        </tbody></table>
+      </details>
+      <h4>Branded answer</h4><pre>{{ r.branded.raw_answer }}</pre>
+      <h4>Buyer questions</h4>
+      {% for q in r.questions %}
+        <details class="nested"><summary>{{ q.prompt }} <small>{{ q.source }} · {{ q.answers | length }} answers</small></summary>
+        {% for a in q.answers %}
+          <div class="answer"><small>Sample {{ a.sample }}{% if a.named %} · named: {{ a.named }}{% endif %}</small>
+          {% if a.error %}<p class="st st-fail">{{ a.error }}</p>{% else %}<pre>{{ a.raw_answer }}</pre>{% endif %}</div>
+        {% endfor %}
+        </details>
+      {% endfor %}
+    {% endif %}
+    {% if r.source %}<a class="raw" href="{{ (bundle.parent / r.source.dir / 'reputation/scores.json') | file_url }}">raw scores JSON</a>
+    {% elif not r.state %}{{ raw("technical/llm_reputation.json") }}{% endif %}
+  </details>
+
+  <details id="social" class="panel"><summary>Social &amp; identity {% set np, nn = m.profiles | length, m.names | length %}<small>{{ np }} profile{{ "s" if np != 1 }} · {{ nn }} distinct name{{ "s" if nn != 1 }}</small></summary>
+    <div class="info-grid">
+      {% for p in m.profiles %}
+      <article class="info-card lvl-{{ "good" if p.verified else "neutral" }}">
+        <header><h3>{{ p.network | capitalize }}</h3>{{ chip("good" if p.verified else "neutral", "Verified" if p.verified else "Unverified") }}</header>
+        <p class="path">{{ val(p.url) }}</p>
+        <dl class="facts">{% if p.status %}<dt>Status</dt><dd>{{ p.status }}</dd>{% endif %}{% if p.confidence %}<dt>Confidence</dt><dd>{{ p.confidence }}</dd>{% endif %}
+          <dt>Evidence</dt><dd>{{ p.evidence }} link{{ "s" if p.evidence != 1 }} or sameAs</dd></dl>
+      </article>
+      {% else %}<p class="muted">No social profiles were linked from the site.</p>{% endfor %}
+      <article class="info-card lvl-neutral">
+        <header><h3>Company name</h3>{{ chip("good" if m.names else "neutral", "Found" if m.names else "Not found") }}</header>
+        {% if m.names %}<ul class="detail-list">{% for n in m.names %}<li><b>{{ n.value }}</b> <small>{{ n.kind | lower }} from structured data on {{ n.pages }} page{{ "s" if n.pages != 1 }}, e.g. {{ val(n.source) }}</small></li>{% endfor %}</ul>
+        {% else %}<p class="muted">No organization name in structured data.</p>{% endif %}
+      </article>
+    </div>
+  </details>
+
+  <details id="coverage" class="panel"><summary>Coverage &amp; limits {% set ns, ne = m.coverage.skipped.total, m.coverage.errors.total %}<small>{{ ns }} URL{{ "s" if ns != 1 }} skipped · {{ ne }} error{{ "s" if ne != 1 }}</small></summary>
+    <div class="info-grid">
+      <article class="info-card lvl-{{ "warning" if m.coverage.skipped.total else "good" }}">
+        <header><h3>Skipped URLs</h3>{{ chip("warning" if m.coverage.skipped.total else "good", m.coverage.skipped.total ~ " skipped") }}</header>
+        {% if m.coverage.reasons %}<dl class="facts">{% for reason, n in m.coverage.reasons %}<dt>{{ reason | replace("_", " ") }}</dt><dd>{{ n }}</dd>{% endfor %}</dl>
+        <details class="nested"><summary>All skipped URLs</summary>{{ tbl(m.coverage.skipped) }}</details>{% endif %}
+      </article>
+      <article class="info-card lvl-{{ "serious" if m.coverage.errors.total else "good" }}">
+        <header><h3>Errors</h3>{{ chip("serious" if m.coverage.errors.total else "good", m.coverage.errors.total ~ (" error" if m.coverage.errors.total == 1 else " errors")) }}</header>
+        {% if m.coverage.errors.total %}{{ tbl(m.coverage.errors) }}{% else %}<p class="muted">No pages failed to load.</p>{% endif %}
+      </article>
+      <article class="info-card lvl-neutral">
+        <header><h3>Limits of this scan</h3></header>
+        <ul class="detail-list">{% for l in m.coverage.limitations %}<li>{{ l }}</li>{% endfor %}</ul>
+      </article>
+    </div>
+    {% if m.coverage.raw %}<p class="files">Raw data:
+      {% for f in m.coverage.raw %}<a href="{{ (bundle / f) | file_url }}">{{ f }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+  </details>
+</main>
+</body>
+</html>
