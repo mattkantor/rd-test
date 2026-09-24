@@ -310,23 +310,10 @@ class LoadTest(unittest.TestCase):
             self.assertNotIn("AI reputation", [t["title"] for t in m["tiles"]])
 
 
-try:
-    from fastapi.testclient import TestClient
-    from companyscan.web.app import create_app
-except ImportError:  # The UI is an optional extra: pip install -e '.[web]'
-    TestClient = None
+from test_web import WebCase
 
 
-@unittest.skipUnless(TestClient, "FastAPI not installed")
-class DashboardPageTest(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.root = Path(self.tmp.name)
-        self.client = TestClient(create_app(self.root), base_url="http://127.0.0.1")
-
-    def tearDown(self):
-        self.tmp.cleanup()
-
+class DashboardPageTest(WebCase):  # Skipped outside python manage.py test.
     def test_renders_every_section_safely(self):
         full_bundle(self.root)
         page = self.client.get("/run/acme")

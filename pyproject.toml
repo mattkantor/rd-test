@@ -11,7 +11,7 @@ dependencies = []
 
 [project.optional-dependencies]
 llm = ["langchain", "langchain-openai"]
-web = ["fastapi[standard]", "langchain", "langchain-openai"]
+web = ["django>=5.2", "huey>=2.5", "psycopg[binary]>=3.2", "whitenoise>=6", "jinja2>=3.1", "langchain", "langchain-openai"]
 
 [project.scripts]
 companyscan = "companyscan.cli:main"

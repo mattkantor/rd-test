@@ -100,11 +100,29 @@ The analyze skill lives in the package (`src/companyscan/skills/`) so **Generate
 ## Web UI
 
 ```sh
-python -m pip install -e '.[web]'   # FastAPI + uvicorn; the scanner itself stays dependency-free
-companyscan serve                  # http://127.0.0.1:8765
+python -m pip install -e '.[web]'   # Django + Huey; the scanner itself stays dependency-free
+python manage.py migrate
+python manage.py createsuperuser    # the UI and admin are staff-only
+python manage.py runserver          # http://127.0.0.1:8000
+python manage.py run_huey           # second terminal: the worker that runs crawls and reports
 ```
 
-A local, single-user page: enter a URL, tick dimensions, and **Crawl**. The table lists each site's latest crawl, and **Last crawled** is that bundle's `manifest.json` `created_at`, so there is no database and existing bundles in `output/` appear automatically. **Generate report** verifies the bundle's hashes, builds a digest of the bundle (about 150K tokens: technical reports, page metadata and page text with navigation/footer lines removed, trimmed evenly on large sites and noted in the report), and sends it with the `footprint-analyze` skill and its rubrics to OpenAI in one LangChain call. The model has no tools; Python writes `analysis/report.md` and `analysis/analysis.json`, then renders the PDF. It needs `OPENAI_API_KEY`. The output folder defaults to `./output` where you start the server; set `COMPANYSCAN_OUTPUT` to change it. The server is FastAPI on uvicorn. It binds to 127.0.0.1, rejects other Host headers (`TrustedHostMiddleware`) and cross-site POSTs, and turns off the API docs routes. Job progress lives in memory; the files on disk are the record.
+A Django app for staff users: enter a URL, tick dimensions, and **Crawl**. The table lists each site's latest crawl, and **Last crawled** is that bundle's `manifest.json` `created_at`. The bundles on disk stay the evidence: the database holds a `Run` index of them (rebuilt from the manifests whenever the site list or the admin run list loads, so bundles written by the CLI appear automatically), plus `Site` and `Job` rows. **Generate report** verifies the bundle's hashes, builds a digest of the bundle (about 150K tokens: technical reports, page metadata and page text with navigation/footer lines removed, trimmed evenly on large sites and noted in the report), and sends it with the `footprint-analyze` skill and its rubrics to OpenAI in one LangChain call. The model has no tools; Python writes `analysis/report.md` and `analysis/analysis.json`, then renders the PDF. It needs `OPENAI_API_KEY`. The output folder defaults to `./output` where you start the server and worker; set `COMPANYSCAN_OUTPUT` to change it (both processes must share it).
+
+Crawl, report and re-crawl jobs run in the Huey worker, which writes progress to the `Job` row; a database constraint allows one running job per site. If a worker dies mid-job, set that job's state to `error` in the admin to unblock the site. `/admin/` lists sites, runs (with a **Dashboard** link and **Generate report** / **Re-crawl** actions) and jobs.
+
+Configuration is by environment:
+
+| Variable | Local default | Server |
+| --- | --- | --- |
+| `DATABASE_URL` | unset: SQLite `./db.sqlite3` | `postgres://user:pass@host:5432/db` (Postgres 15+ with Django 6; 14 works on Django 5.2) |
+| `DJANGO_DEBUG` | `1` without `DATABASE_URL` | `0` when `DATABASE_URL` is set |
+| `DJANGO_SECRET_KEY` | dev key | required |
+| `DJANGO_ALLOWED_HOSTS` | `127.0.0.1,localhost` | your hostname(s), comma-separated |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | none | `https://your.host` behind a proxy |
+| `HUEY_DB` | `./huey.sqlite3` | the queue file; web and worker must share it (one host) |
+
+On a server, run `python manage.py collectstatic` (WhiteNoise serves the files) and serve `companyscan.server.wsgi:application` with any WSGI server.
 
 Each site's **Dashboard** link (`/run/<bundle>`) shows everything that crawl captured:
 - **Cards:** a summary card per area.
@@ -190,7 +208,8 @@ src/companyscan/
 ├── dimensions/              # optional evidence: security, fonts, reputation, meta_ads (+ DIMENSIONS registry)
 ├── llm.py                   # LangChain chat models; REPORT_MODEL / REPUTATION_MODEL from env
 ├── report/                  # analyze.py (hash check, digest, one LLM call), pdf.py (pandoc + Chrome)
-├── web/                     # FastAPI app.py (routes) and jobs.py (background crawl/report jobs)
+├── server/                  # Django project: settings.py (env-driven), urls.py, wsgi.py
+├── web/                     # Django app: models (Site, Run, Job), views, admin, tasks.py (Huey jobs), dashboard.py
 └── views/
     ├── templates/index.html # UI markup (Jinja2)
     ├── static/app.css       # UI styles
@@ -203,7 +222,7 @@ src/companyscan/
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-Web UI tests are skipped unless FastAPI is installed (`.venv/bin/python -m unittest discover -s tests` after `pip install -e '.[web]'`).
+Web UI tests run only under Django (plain `unittest` skips them): `.venv/bin/python manage.py test tests --top-level-directory tests` after `pip install -e '.[web]'` runs the whole suite.
 
 Tests use a loopback HTTP fixture, never live social platforms. They verify artifact hashes, crawl/byte/depth bounds, sitemap-index cycles, robots policy (including redirect destinations), extraction, social attribution, private-target blocking, output preservation, and batch continuation.
 

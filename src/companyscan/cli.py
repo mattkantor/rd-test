@@ -66,9 +66,6 @@ def parser(json_errors=False):
     rep.add_argument("--prompts-file", type=Path, help="Buyer questions, one per line; # comments and blank lines ignored")
     rep.add_argument("--samples", type=positive, default=3, help="Times each question is asked")
     rep.add_argument("--num-prompts", type=positive, default=8, help="Buyer questions to generate when none are given")
-    serve = sub.add_parser("serve", help="Local web UI for crawls and reports")
-    serve.add_argument("--port", type=int, default=8765)
-    serve.add_argument("--json", action="store_true")
     pdf = sub.add_parser("pdf", help="Render a bundle's analysis report.md as a designed PDF")
     pdf.add_argument("target", type=Path, help="Evidence bundle directory")
     pdf.add_argument("--json", action="store_true")
@@ -187,14 +184,6 @@ def batch(args):
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     args = parser("--json" in argv).parse_args(argv)
-    if args.command == "serve":
-        try:
-            from .web.app import serve
-        except ImportError as exc:
-            print(f"companyscan: serve needs FastAPI: pip install -e '.[web]' ({exc})", file=sys.stderr)
-            return 2
-        serve(args.port)
-        return 0
     try:
         if args.command == "pdf":
             from .report.pdf import render_pdf

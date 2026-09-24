@@ -8,11 +8,7 @@ from companyscan.web.dashboard import load
 from test_copy_scores import HARD_SELL, PLAIN, SLOP
 from test_dashboard import full_bundle, write
 
-try:
-    from fastapi.testclient import TestClient
-    from companyscan.web.app import create_app
-except ImportError:  # The UI is an optional extra.
-    TestClient = None
+from test_web import WebCase
 
 
 def rescore(bundle, rel, text):
@@ -78,12 +74,15 @@ class DashboardCopyScoreTests(unittest.TestCase):
         self.assertEqual(tiles["Marketing bias"]["href"], "?sort=bias#pages")
         self.assertIn({"level": "warning", "text": "1 page scores HIGH for AI slop", "href": "?sort=slop#pages"}, m["attention"])
 
-    @unittest.skipUnless(TestClient, "FastAPI not installed")
+
+
+class DashboardCopyPageTest(WebCase):  # Skipped outside python manage.py test.
     def test_page_renders_scores_and_sort_links(self):
-        page = TestClient(create_app(self.root), base_url="http://127.0.0.1").get("/run/acme?sort=slop")
+        home = rescore(full_bundle(self.root), "pages/0001.json", SLOP + "\n" + "\n".join([HARD_SELL] * 3))
+        page = self.client.get("/run/acme?sort=slop")
         self.assertEqual(page.status_code, 200)
         self.assertIn('href="?sort=bias#pages"', page.text)
-        self.assertIn(f"Marketing bias {self.home['marketing_bias']['score']} (high)", page.text)
+        self.assertIn(f"Marketing bias {home['marketing_bias']['score']} (high)", page.text)
 
 
 if __name__ == "__main__":

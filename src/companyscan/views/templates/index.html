@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   {% if running %}<meta http-equiv="refresh" content="4">{% endif %}
   <title>Company Footprint</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='app.css') }}">
+  <link rel="stylesheet" href="{{ static('app.css') }}">
 </head>
 <body>
 <main>
-  <h1>Company Footprint</h1>
+  <h1>Company Footprint <small><a href="/admin/">admin</a></small></h1>
   {% if message %}<p class="msg">{{ message }}</p>{% endif %}
 
-  <form class="crawl" method="post" action="/crawl">
+  <form class="crawl" method="post" action="/crawl">{{ csrf_input }}
     <input type="url" name="url" placeholder="https://example.com" required autofocus>
     <div class="dims">
       {% for key, dim in dimensions.items() %}
@@ -39,11 +39,11 @@
           {% if r.pdf %}<a href="{{ r.pdf | file_url }}"><b>PDF</b></a>{% endif %}
         </td>
         <td>
-          <form method="post" action="/recrawl">
+          <form method="post" action="/recrawl">{{ csrf_input }}
             <input type="hidden" name="dir" value="{{ r.dir.name }}">
             <button {% if job.state == "running" %}disabled{% endif %}>Re-crawl + report</button>
           </form>
-          <form method="post" action="/report">
+          <form method="post" action="/report">{{ csrf_input }}
             <input type="hidden" name="dir" value="{{ r.dir.name }}">
             <button {% if job.state == "running" %}disabled{% endif %}>{{ "Regenerate" if r.report else "Generate" }} report</button>
           </form>

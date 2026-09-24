@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ m.header.host }} · Company Footprint</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='app.css') }}">
+  <link rel="stylesheet" href="{{ static('app.css') }}">
   {% if job and job.state == "running" %}<meta http-equiv="refresh" content="3">{% endif %}
 </head>
 <body>
@@ -90,7 +90,7 @@
   </section>
   {% endif %}
 
-  <form class="recrawl" method="post" action="/recrawl">
+  <form class="recrawl" method="post" action="/recrawl">{{ csrf_input }}
     <input type="hidden" name="dir" value="{{ bundle.name }}">
     <input type="hidden" name="return_to" value="dashboard">
     <button {% if running %}disabled{% endif %}>Re-crawl + report</button>
@@ -136,7 +136,7 @@
         {% if m.report.analysis %} · <a href="{{ m.report.analysis | file_url }}">analysis.json</a>{% endif %}</p>
     {% else %}
       <p class="muted">No report yet.</p>
-      <form method="post" action="/report"><input type="hidden" name="dir" value="{{ bundle.name }}"><input type="hidden" name="return_to" value="dashboard"><button {% if running %}disabled{% endif %}>Generate report</button></form>
+      <form method="post" action="/report">{{ csrf_input }}<input type="hidden" name="dir" value="{{ bundle.name }}"><input type="hidden" name="return_to" value="dashboard"><button {% if running %}disabled{% endif %}>Generate report</button></form>
     {% endif %}
     {% if m.report.findings %}
       <table class="data"><thead><tr><th>ID</th><th>Verdict</th><th>Finding</th></tr></thead><tbody>
