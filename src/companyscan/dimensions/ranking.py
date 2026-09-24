@@ -2,6 +2,8 @@
 from collections import Counter, defaultdict
 from urllib.parse import urlsplit
 
+from .identity import same_city
+
 
 def company_key(name, website=None):
     """Website host (lowercase, no www.) when usable, else the lowercased name."""
@@ -12,12 +14,15 @@ def company_key(name, website=None):
     return (host or "").removeprefix("www.") or name.strip().lower()
 
 
-def is_target(key, name, domain, company_name=None):
-    # ponytail: exact domain/name/label match only; aliases like "Acme Inc" split. Add an alias list if that bites.
+def is_target(key, name, domain, company_name=None, profile=None, city=None):
+    """profile (identity.build) adds the site's other names and cities: a name match placed in another city is a namesake."""
     if key != name.strip().lower():  # A stated website decides: same name on another domain is a different company.
         return key == domain
+    names = [company_name, *(profile or {}).get("names", [])]
     squashed = key.replace(" ", "")
-    return key == domain or squashed in {domain.split(".")[0], (company_name or "").lower().replace(" ", "")} - {""}
+    if key != domain and squashed not in {domain.split(".")[0], *(n.lower().replace(" ", "") for n in names if n)} - {""}:
+        return False
+    return same_city(city, (profile or {}).get("cities", [])) is not False
 
 
 def rating(value):
@@ -39,8 +44,8 @@ def order(mention):
     return position if isinstance(position, (int, float)) and not isinstance(position, bool) else float("inf")
 
 
-def score(domain, answers, company_name=None, branded_sentiment=None):
-    """domain: target host without www. answers: rows with a `companies` list, or an `error`."""
+def score(domain, answers, company_name=None, branded_sentiment=None, profile=None):
+    """domain: target host without www. answers: rows with a `companies` list, or an `error`. profile: identity.build()."""
     positions, names, unbranded = defaultdict(list), defaultdict(Counter), []
     scored = [a for a in answers if not a.get("error") and isinstance(a.get("companies"), list)]
     for answer in scored:
@@ -48,7 +53,7 @@ def score(domain, answers, company_name=None, branded_sentiment=None):
         mentions = [c for c in answer["companies"] if isinstance(c, dict) and isinstance(c.get("name"), str) and c["name"].strip()]
         for c in sorted(mentions, key=order):
             key = company_key(c["name"], c.get("website"))
-            key = domain if is_target(key, c["name"], domain, company_name) else key
+            key = domain if is_target(key, c["name"], domain, company_name, profile, c.get("city")) else key
             if key in seen:
                 continue  # Named twice in one answer: counts once, at its first position.
             seen[key] = c

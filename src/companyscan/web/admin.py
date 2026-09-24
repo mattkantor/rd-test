@@ -12,8 +12,11 @@ admin.site.site_header = admin.site.site_title = "Company Footprint"
 
 @admin.register(Site)
 class SiteAdmin(admin.ModelAdmin):
-    list_display = ["origin", "business_name"]
+    list_display = ["origin", "business_name", "location"]
     search_fields = ["origin", "business_name"]
+
+    def get_readonly_fields(self, request, obj=None):
+        return ["origin"] if obj else []  # The URL is entered once, on a new site; runs attach to it.
 
 
 @admin.register(Run)

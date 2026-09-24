@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Edit {{ site.host }} · Company Footprint</title>
+  <link rel="stylesheet" href="{{ static('app.css') }}">
+  <link rel="stylesheet" href="{{ static('pangram.css') }}">
+</head>
+<body>
+<main>
+  <p><a href="{{ '/site/%d' % site.pk if site.runs.exists() else '/' }}">← Back</a></p>
+  <h1>Edit {{ site.host }}</h1>
+  <form class="crawl site-edit" method="post">{{ csrf_input }}
+    <label>URL <input type="url" value="{{ site.origin }}" disabled></label>
+    <small>The URL can't be changed. To track a different URL, crawl it from the home page as a new site.</small>
+    {{ form.as_div() }}
+    <small>City, state and country only for a local business. Changes apply to the next crawl or re-crawl.</small>
+    <button>Save</button>
+  </form>
+</main>
+</body>
+</html>

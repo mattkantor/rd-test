@@ -52,6 +52,8 @@ def parser(json_errors=False):
         cmd.add_argument("--collect-social", action="store_true", help="Attempt public HTML capture of discovered profiles")
         cmd.add_argument("--known-profile", action="append", default=[])
         cmd.add_argument("--company-name")
+        cmd.add_argument("--icp", help="Ideal customer profile for llm_reputation buyer questions")
+        cmd.add_argument("--location", help="City, State, Country for a local business (llm_reputation)")
         cmd.add_argument("--dimension", dest="dimensions", action="append", default=[], choices=list(DIMENSIONS),
                          help="Extra report dimension to collect (repeatable)")
         if name == "batch":
@@ -62,6 +64,8 @@ def parser(json_errors=False):
     rep.add_argument("--output", type=Path)
     rep.add_argument("--model", default=REPUTATION_MODEL, help="LangChain provider:model, e.g. anthropic:claude-sonnet-5")
     rep.add_argument("--company-name")
+    rep.add_argument("--icp", help="Ideal customer profile; buyer questions use it instead of the model's guess")
+    rep.add_argument("--location", help="City, State, Country for a local business")
     rep.add_argument("--prompt", action="append", default=[], help="Buyer question to ask (repeatable); replaces generated ones")
     rep.add_argument("--prompts-file", type=Path, help="Buyer questions, one per line; # comments and blank lines ignored")
     rep.add_argument("--samples", type=positive, default=3, help="Times each question is asked")
@@ -149,7 +153,7 @@ def reputation(args):
         raise ValueError(f"Output path must be an empty directory: {output}")
     try:
         result = rank_reputation(args.target, chat_model(args.model), args.company_name,
-                                 prompts or None, args.samples, args.num_prompts)
+                                 prompts or None, args.samples, args.num_prompts, icp=args.icp, location=args.location)
     except Exception as exc:  # Provider/auth/network errors surface as the standard error shape.
         raise ValueError(f"LLM request failed: {exc}") from exc
     return write_bundle(output, result, args.model)

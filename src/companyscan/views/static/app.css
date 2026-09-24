@@ -156,3 +156,12 @@ a.raw { font-size: 13px; }
   table, tbody, tr, td { display: block; }
   thead { display: none; }
 }
+details.history { margin-top: 16px; }
+a.button { display: inline-block; font-weight: 600; padding: 4px 10px; border-radius: 8px; background: #2b50d6; color: #fff; text-decoration: none; }
+form.site-edit div, form.site-edit label { display: block; margin: 0 0 12px; }
+form.site-edit input, form.site-edit textarea { display: block; width: 100%; box-sizing: border-box; font: inherit; padding: 8px 10px; border: 1px solid #c4c9d2; border-radius: 8px; margin-top: 4px; }
+form.site-edit small { display: block; margin: -6px 0 12px; color: #5d6470; }
+.job-mini { margin-top: 6px; }
+.job-mini .bar { height: 6px; margin-bottom: 3px; }
+.job-mini a { display: block; font-size: 12px; }
+.pending { background: #fff; border: 1px solid #dfe2e7; border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; }

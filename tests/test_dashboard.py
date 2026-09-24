@@ -132,6 +132,18 @@ class LoadTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_jev_judgment_in_content_area_and_sort(self):
+        write(self.bundle, "technical/jev_copy.json", {"status": "OBSERVED", "pages": [
+            {"url": "https://acme.test/", "ai_slop": {"score": 74, "level": "HIGH", "confidence": 0.9}, "first_hand": 0.05, "generic": 0.8},
+            {"url": "https://acme.test/about", "error": "HTTP 429: slow down"}]})
+        m = load(self.bundle, sort="jev")
+        self.assertEqual([c["jev"] for c in m["pages"]], [74, None, None])
+        content = m["pages"][0]["areas"][0]
+        self.assertIn("Jev 74 HIGH", content["summary"])
+        self.assertIn("AI slop (Jev): 74 (HIGH), confidence 90% · first-hand detail 5% · generic 80%", content["details"])
+        about = next(c for c in m["pages"] if c["url"] == "https://acme.test/about")
+        self.assertIn("AI slop (Jev): not judged, HTTP 429: slow down", about["areas"][0]["details"])
+
     def test_header_integrity_report_tiles_and_anomalies(self):
         m = load(self.bundle)
         self.assertEqual((m["header"]["host"], m["header"]["status"], m["header"]["errors"]), ("acme.test", "PARTIAL", 1))
@@ -248,8 +260,12 @@ class LoadTest(unittest.TestCase):
         write(self.bundle, "technical/security.json", {"https": False, "missing_summary": []})
         write(self.bundle, "technical/aeo.json", {"pages_checked": 3, "pages_with_syntax_errors": ["https://acme.test/"]})
         scores = {**SCORED["scores"], "rank": None, "sentiment": {**SCORED["scores"]["sentiment"], "score": -30}}
-        write(self.bundle, "technical/llm_reputation.json", {**SCORED, "scores": scores})
+        branded = {**SCORED["branded"], "identity": {"verdict": "mismatch", "agree": [], "echoed": [], "conflict": ["city"]}}
+        profile = {"names": ["Acme Dental"], "cities": ["Austin"], "phones": [], "categories": [], "profiles": []}
+        write(self.bundle, "technical/llm_reputation.json", {**SCORED, "scores": scores, "branded": branded, "profile": profile})
         levels = {a["text"]: a["level"] for a in load(self.bundle)["attention"]}
+        self.assertEqual(levels["AI describes a different business under this name (city differs)"], "serious")
+        self.assertEqual(load(self.bundle)["reputation"]["profile"], [("Names", "Acme Dental"), ("Cities", "Austin")])
         self.assertEqual(levels["Not every page is served over HTTPS"], "critical")
         self.assertEqual(levels["JSON-LD syntax errors on 1 page"], "serious")
         self.assertEqual(levels["Not named in any AI buyer answer"], "serious")
@@ -257,6 +273,17 @@ class LoadTest(unittest.TestCase):
         self.assertEqual(list(levels.values())[0], "critical")  # Most severe first.
         m = load(self.bundle)
         self.assertEqual(m["reputation"]["scores"]["diverging"], {"left": 35.0, "width": 15.0, "sign": "neg"})
+
+    def test_icp_check_and_site_read(self):
+        read = {"pages": ["https://acme.test/"], "error": None, "identity": {
+            "company_name": "Acme Dental", "offerings": ["cleanings", "braces"], "site_icp": "families", "phones": [],
+            "evidence": [{"url": "https://acme.test/", "quote": "Family dentistry", "supports": "category", "verified": True},
+                         {"url": "https://acme.test/", "quote": "<b>Made up</b>", "supports": "icp", "verified": False}]}}
+        check = {"kind": "INFERRED", "user_icp": "hospitals", "site_icp": "families", "verdict": "misaligned", "reason": "Sells to families"}
+        write(self.bundle, "technical/llm_reputation.json", {**SCORED, "icp_check": check, "site_read": read})
+        m = load(self.bundle)
+        self.assertEqual(m["reputation"]["site_read"]["rows"], [("Name", "Acme Dental"), ("Sells", "cleanings, braces"), ("Sells to", "families")])
+        self.assertEqual({a["text"]: a["level"] for a in m["attention"]}["Your ICP doesn't match who the website sells to"], "warning")
 
     def test_generic_font_keywords_do_not_count(self):
         families = [{"family": f, "pages": 3} for f in ("sans-serif", "Archivo", "Helvetica Neue", "Arial", "inherit", "system-ui")]
@@ -314,6 +341,18 @@ from test_web import WebCase
 
 
 class DashboardPageTest(WebCase):  # Skipped outside python manage.py test.
+    def test_renders_icp_check_and_escaped_site_quotes(self):
+        read = {"pages": ["https://acme.test/"], "error": None, "identity": {"company_name": "Acme", "evidence": [
+            {"url": "https://acme.test/", "quote": "<script>x</script>", "supports": "icp", "verified": False}]}}
+        check = {"user_icp": "hospitals", "site_icp": "families", "verdict": "partial", "reason": "Some overlap"}
+        full_bundle(self.root, reputation={**SCORED, "icp_check": check, "site_read": read})
+        page = self.client.get("/run/acme").text
+        self.assertIn('class="st st-warning">PARTIAL</span>', page)
+        self.assertIn("the site sells to <strong>families</strong>", page)
+        self.assertIn("✘ not found on the page:", page)
+        self.assertIn("&lt;script&gt;x&lt;/script&gt;", page)
+        self.assertNotIn("<script>x</script>", page)
+
     def test_renders_every_section_safely(self):
         full_bundle(self.root)
         page = self.client.get("/run/acme")
@@ -341,7 +380,7 @@ class DashboardPageTest(WebCase):  # Skipped outside python manage.py test.
         self.assertIn('<span class="icon" aria-hidden="true">!</span>6 warnings', page.text)
         self.assertIn('class="bar-row is-target"', page.text)
         self.assertIn('class="fill pos" style="left: 50%; width: 21.0%"', page.text)
-        self.assertIn('href="/run/acme"', self.client.get("/").text)
+        self.assertIn('href="/site/', self.client.get("/").text)
 
     def test_wrong_shaped_json_never_500s(self):
         d = full_bundle(self.root)

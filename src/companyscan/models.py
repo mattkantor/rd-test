@@ -28,6 +28,8 @@ class Config:
     allow_private: bool = False
     collect_social: bool = False
     dimensions: list = field(default_factory=list)
+    icp: str | None = None  # User-supplied audience for llm_reputation buyer questions.
+    location: str | None = None  # "City, State, Country" for a local business.
 
     def validate(self) -> None:
         if min(self.max_pages, self.max_bytes, self.max_sitemaps, self.max_urls) < 1:

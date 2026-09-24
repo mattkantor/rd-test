@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ m.header.host }} · Company Footprint</title>
   <link rel="stylesheet" href="{{ static('app.css') }}">
-  {% if job and job.state == "running" %}<meta http-equiv="refresh" content="3">{% endif %}
+  <link rel="stylesheet" href="{{ static('pangram.css') }}">
 </head>
 <body>
 {% macro val(v) -%}
@@ -56,8 +56,12 @@
   {%- endif -%}
 {%- endmacro %}
 <main class="dash">
-  <p><a href="/">← All sites</a></p>
-  <h1>{{ m.header.host }}</h1>
+  <p><a href="/">← All sites</a>{% if site and not on_site %} · <a href="/site/{{ site.pk }}">Current assessment</a>{% endif %}</p>
+  <h1>{{ m.header.host }}{% if site and bundle.name != history[0].name %} <small>older assessment</small>{% endif %}</h1>
+  {% if site %}<p class="meta profile">
+    {% if site.business_name %}<strong>{{ site.business_name }}</strong> · {% endif %}{% if site.location %}{{ site.location }} · {% endif %}
+    {% if site.icp %}ICP: {{ site.icp | truncate(120) }} · {% endif %}<a class="button" href="/site/{{ site.pk }}/edit">Edit profile</a>
+  </p>{% endif %}
   <p class="meta">
     {{ m.header.created_at | local_time }} · <span class="{{ m.header.status | badge }}">{{ m.header.status }}</span>
     · {{ m.header.command }} · {{ m.header.counts.pages or 0 }} pages · max {{ m.header.max_pages }} pages, depth {{ m.header.max_depth }}
@@ -70,34 +74,34 @@
     {% else %}<span class="st st-fail">{{ m.integrity | length }} problem(s)</span>: {{ m.integrity | join("; ") }}{% endif %}
   </p>
 
-  {% set kinds = {"crawl": "Crawl", "recrawl": "Re-crawl", "report": "Report"} %}
   {% set running = job and job.state == "running" %}
-  {% if job %}
-  <section class="job job-{{ job.state }}">
-    {% if running %}
-      <h3>{{ kinds.get(job.kind, "Job") }} running · {% if job.steps %}step {{ job.step }} of {{ job.steps }}{% else %}starting…{% endif %}</h3>
-      <div class="bar"><div style="width: {{ percent }}%"></div></div>
-      <p>{{ job.label }}</p>
-      <small>Started {{ job.started | local_time }} · {{ percent }}% · refreshing every 3 seconds</small>
-    {% elif job.state == "done" %}
-      <p>✔ {{ kinds.get(job.kind, "Job") }} finished: {{ job.label }}
-        {% if job.kind in ("crawl", "recrawl") and job.run and job.run != bundle.name %}
-          → <a href="/run/{{ job.run | urlencode }}">View new run</a>{% endif %}</p>
-      {% if job.finished %}<small>Finished {{ job.finished | local_time }}</small>{% endif %}
-    {% else %}
-      <p class="st st-error">{{ kinds.get(job.kind, "Job") }} failed: {{ job.label }}</p>
-    {% endif %}
-  </section>
-  {% endif %}
+  <div id="job" data-poll="/run/{{ bundle.name | urlencode }}/job">{% include "job.html" %}</div>
 
   <form class="recrawl" method="post" action="/recrawl">{{ csrf_input }}
     <input type="hidden" name="dir" value="{{ bundle.name }}">
-    <input type="hidden" name="return_to" value="dashboard">
-    <button {% if running %}disabled{% endif %}>Re-crawl + report</button>
+    <input type="hidden" name="return_to" value="{{ 'site' if on_site else 'dashboard' }}">
+    <button data-busy {% if running %}disabled{% endif %}>Re-crawl + report</button>
     <small>Crawls again with every check (WCAG, analytics, AEO, social previews, security, fonts, AI reputation, Meta ads), then writes
       the report and PDF for the new run. This run is kept. Expect a few minutes: AI reputation makes about 50 LLM calls,
       and the report is one long LLM call.</small>
   </form>
+
+  {% if history | length > 1 %}
+  <details class="history" open>
+    <summary>History · {{ history | length }} assessments</summary>
+    <table class="data">
+      <thead><tr><th>Crawled</th><th>Pages · status</th><th>Checks</th><th>Report</th></tr></thead>
+      <tbody>{% for r in history %}
+        <tr{% if r.name == bundle.name %} class="target"{% endif %}>
+          <td>{% if r.name == bundle.name %}{{ r.created_at | local_time }} (shown){% else %}<a href="/run/{{ r.name | urlencode }}">{{ r.created_at | local_time }}</a>{% endif %}{% if loop.first %} · current{% endif %}</td>
+          <td>{{ r.pages }} · {{ r.status }}</td>
+          <td><small>{{ r.dimensions | join(", ") }}</small></td>
+          <td>{% if r.pdf %}<a href="{{ r.pdf | file_url }}">PDF</a>{% elif r.report %}<a href="{{ r.report | file_url }}">report.md</a>{% else %}—{% endif %}</td>
+        </tr>{% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% endif %}
 
   <nav class="tabs" aria-label="Dashboard sections">
     <a href="#overview">Overview</a><a href="#pages">Pages</a><a href="#site">Site-wide</a><a href="#meta_ads">Ads</a>
@@ -142,7 +146,7 @@
         {% if m.report.analysis %} · <a href="{{ m.report.analysis | file_url }}">analysis.json</a>{% endif %}</p>
     {% else %}
       <p class="muted">No report yet.</p>
-      <form method="post" action="/report">{{ csrf_input }}<input type="hidden" name="dir" value="{{ bundle.name }}"><input type="hidden" name="return_to" value="dashboard"><button {% if running %}disabled{% endif %}>Generate report</button></form>
+      <form method="post" action="/report">{{ csrf_input }}<input type="hidden" name="dir" value="{{ bundle.name }}"><input type="hidden" name="return_to" value="{{ 'site' if on_site else 'dashboard' }}"><button data-busy {% if running %}disabled{% endif %}>Generate report</button></form>
     {% endif %}
     {% if m.report.findings %}
       <table class="data"><thead><tr><th>ID</th><th>Verdict</th><th>Finding</th></tr></thead><tbody>
@@ -209,6 +213,28 @@
       <h4>Branded answer</h4><pre>{{ r.legacy.answer }}</pre>
       <h4>Competitors</h4>{{ tbl(r.legacy.competitors) }}
     {% else %}{% set s = r.scores %}
+      {% if s.visibility == "not_found" %}<p><span class="st st-fail">NOT FOUND</span> The model didn't recognize this business when
+        asked by name and never named it in {{ s.answers_scored }} buyer answers. It needs more exposure (listings, reviews,
+        press, directories) before AI assistants will recommend it.</p>{% endif %}
+      {% set idn = r.identity %}{% if idn.verdict %}<p class="note">Identity check on the branded answer:
+        {% if idn.verdict == "mismatch" %}<span class="st st-fail">NAMESAKE</span> the model described a different business
+          ({{ idn.conflict | join(", ") }} differs from this site), so its answer isn't counted as recognition or sentiment.
+        {% elif idn.verdict == "confirmed" %}<span class="st st-pass">CONFIRMED</span> {{ idn.agree | join(", ") }} matches this site.
+        {% else %}<span class="st st-unknown">UNCONFIRMED</span> the answer stated nothing checkable beyond what the prompt gave it.{% endif %}</p>{% endif %}
+      {% set icp = r.icp_check %}{% if icp.verdict %}<p class="note">ICP check <small>(inferred by the model from the website)</small>:
+        <span class="st {{ {'aligned': 'st-pass', 'partial': 'st-warning', 'misaligned': 'st-fail'}.get(icp.verdict, 'st-unknown') }}">{{ icp.verdict | upper }}</span>
+        your ICP <strong>{{ icp.user_icp }}</strong>; the site sells to <strong>{{ icp.site_icp or "unclear" }}</strong>.
+        {% if icp.reason %}{{ icp.reason }}{% endif %}</p>{% endif %}
+      {% set sr = r.site_read %}{% if sr.rows or sr.error %}<details class="nested"><summary>What the website says (model's read of {{ sr.pages | length }} pages)</summary>
+        {% if sr.error %}<p><span class="st st-unknown">UNKNOWN</span> {{ sr.error }}</p>{% endif %}
+        <dl class="facts">{% for label, value in sr.rows %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
+        {% if sr.quotes %}<ul class="detail-list">{% for q in sr.quotes %}<li>{{ "✔" if q.verified else "✘ not found on the page:" }}
+          “{{ q.quote }}” <small>{{ q.supports }} · {{ val(q.url) }}</small></li>{% endfor %}</ul>{% endif %}</details>{% endif %}
+      {% if r.profile %}<details class="nested"><summary>Identity profile (from the crawl and site details)</summary>
+        <dl class="facts">{% for label, value in r.profile %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl></details>{% endif %}
+      {% set aud = r.audience %}{% if aud.icp or aud.location %}<p class="note">Buyer questions asked for
+        {% for key, label in (("icp", "ICP"), ("location", "location")) %}{% set a = aud[key] %}{% if a and a.value %}{{ label }} <strong>{{ a.value }}</strong>
+        <small>({{ {"user": "you", "site": "from the website"}.get(a.source, "model's guess") }})</small>{% if not loop.last %} · {% endif %}{% endif %}{% endfor %}</p>{% endif %}
       <div class="stat-row">
         <div class="stat"><p class="label">Rank</p><p class="value">{% if s.rank %}#{{ s.rank }} of {{ s.of }}{% else %}Unranked{% endif %}</p>
           <p class="sub">{% if s.rank %}among companies named{% else %}{{ s.of }} companies named, not you{% endif %}</p></div>
@@ -296,5 +322,6 @@
       {% for f in m.coverage.raw %}<a href="{{ (bundle / f) | file_url }}">{{ f }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
   </section>
 </main>
+<script src="{{ static('poll.js') }}"></script>
 </body>
 </html>

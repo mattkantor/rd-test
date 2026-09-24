@@ -15,6 +15,10 @@ class Site(models.Model):
     origin = models.CharField(max_length=500, unique=True)
     business_name = models.CharField(max_length=255, blank=True)
     icp = models.TextField("ICP", blank=True)
+    # Only for a local business: helps the AI reputation check find it and asks buyer questions for that place.
+    city = models.CharField(max_length=100, blank=True)
+    state = models.CharField(max_length=100, blank=True)
+    country = models.CharField(max_length=100, blank=True)
 
     def __str__(self):
         return self.origin
@@ -22,6 +26,16 @@ class Site(models.Model):
     @property
     def host(self):
         return urlsplit(self.origin).netloc
+
+    @property
+    def location(self):
+        return ", ".join(part for part in (self.city, self.state, self.country) if part.strip())
+
+    def scan_args(self):
+        """CLI flags carrying what the user told us about the business into the crawl."""
+        # flag=value so text starting with "-" isn't read as another flag.
+        return [f"{flag}={value.strip()}" for flag, value in
+                (("--company-name", self.business_name), ("--icp", self.icp), ("--location", self.location)) if value.strip()]
 
 
 class Run(models.Model):

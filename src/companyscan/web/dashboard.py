@@ -11,9 +11,9 @@ MISSING, UNREADABLE = "not collected", "unreadable"
 SITE = ["robots", "sitemap", "crawler-access", "redirects", "llms", "feeds"]
 PER_PAGE = ["indexing", "headers", "schema", "aeo", "measurement", "social-preview", "accessibility", "security", "fonts",
             "copy-scores"]
-DIMENSIONS = ["security", "fonts", "meta_ads", "llm_reputation"]
+DIMENSIONS = ["security", "fonts", "meta_ads", "llm_reputation", "jev_copy"]
 AREAS = ["Content", "SEO", "AEO", "Social", "Accessibility", "Analytics", "Security"]
-SORTS = ("issues", "path", "type", "slop", "bias", *(a.lower() for a in AREAS))
+SORTS = ("issues", "path", "type", "slop", "bias", "jev", *(a.lower() for a in AREAS))
 COPY = {"slop": ("ai_slop", "AI slop"), "bias": ("marketing_bias", "Marketing bias")}
 RANK = {"critical": 0, "serious": 1, "warning": 2, "neutral": 3, "good": 4}
 TITLE_MAX, DESCRIPTION_MAX = 60, 160  # ponytail: common search-snippet lengths; tune if they flag too much.
@@ -174,6 +174,22 @@ def copy_lines(p):
     return (" · " + " · ".join(suffix)) if suffix else "", problems, details
 
 
+def jev_lines(j):
+    """Content-area suffix and details for the Jev judgment of one page (technical/jev_copy.json entry)."""
+    if not j:
+        return "", []
+    if j.get("error"):
+        return "", [f"AI slop (Jev): not judged, {j['error']}"]
+    s = as_dict(j.get("ai_slop"))
+    value, confidence = num(s.get("score")), num(s.get("confidence"))
+    if value is None:
+        return "", []
+    probability = lambda v: f"{round(v * 100)}%" if num(v) is not None else "—"
+    return (f" · Jev {value} {s.get('level')}",
+            [f"AI slop (Jev): {value} ({s.get('level')}), confidence {probability(confidence)} · first-hand detail "
+             f"{probability(j.get('first_hand'))} · generic {probability(j.get('generic'))}"])
+
+
 def page_areas(p, by_url, collected):
     """Every per-page signal, grouped into the card's areas."""
     url, status, extracted = p.get("url"), p.get("status"), isinstance(p.get("visible_text"), str)
@@ -190,6 +206,8 @@ def page_areas(p, by_url, collected):
         problems.append(("warning", "Response truncated at the byte limit"))
     words, ctas = len(p["visible_text"].split()) if extracted else 0, len(as_list(p.get("ctas")))
     suffix, copy_problems, copy_details = copy_lines(p) if extracted else ("", [], [])
+    jev_suffix, jev_details = jev_lines(as_dict(by_url["jev_copy"].get(url)))
+    suffix, copy_details = suffix + jev_suffix, copy_details + jev_details
     out = [area("Content", problems + copy_problems, f"HTTP {status} · {plural(words, 'word')} · {plural(ctas, 'CTA')}{suffix}",
                 ([f"Emails: {', '.join(map(str, as_list(p.get('emails'))))}"] if as_list(p.get("emails")) else []) + copy_details)]
     if not extracted:
@@ -273,7 +291,8 @@ def page_cards(bundle, raw, sort="issues", desc=False):
     bundle = Path(bundle)
     by_url = {name: {e["url"]: e for e in as_list(entries) if isinstance(e, dict) and isinstance(e.get("url"), str)}
               for name, entries in (("indexing", raw["indexing"]), ("social-preview", as_dict(raw["social-preview"]).get("pages")),
-                                    ("security", as_dict(raw["security"]).get("pages")))}
+                                    ("security", as_dict(raw["security"]).get("pages")),
+                                    ("jev_copy", as_dict(raw["jev_copy"]).get("pages")))}
     collected = {name: isinstance(raw[name], dict) for name in ("social-preview", "measurement")}
     cards = []
     for path in sorted((bundle / "pages").glob("*.json")):
@@ -295,7 +314,8 @@ def page_cards(bundle, raw, sort="issues", desc=False):
                       "label": as_dict(p.get("classification")).get("label"), "content": content_link(bundle, p),
                       "level": worst if RANK[worst] < RANK["neutral"] else "good",
                       "issues": sum(a["problems"] for a in areas), "areas": areas,
-                      "slop": score(p, "ai_slop"), "bias": score(p, "marketing_bias")})
+                      "slop": score(p, "ai_slop"), "bias": score(p, "marketing_bias"),
+                      "jev": num(as_dict(as_dict(by_url["jev_copy"].get(p.get("url"))).get("ai_slop")).get("score"))})
     return sorted(cards, key=card_order(sort), reverse=desc)
 
 
@@ -307,7 +327,7 @@ def card_order(sort):
         order = {**RANK, "good": 3, "neutral": 4}
         return lambda c: (order[c["areas"][i]["level"]] if len(c["areas"]) > i else 5,
                           -(c["areas"][i]["problems"] if len(c["areas"]) > i else 0), sort_key(c["path"]))
-    if sort in COPY:  # Highest score first; unscored pages last.
+    if sort in (*COPY, "jev"):  # Highest score first; unscored pages last.
         return lambda c: (c.get(sort) is None, -(c.get(sort) or 0), sort_key(c["path"]))
     if sort == "path":
         return lambda c: sort_key(c["path"])
@@ -323,6 +343,19 @@ def report(bundle):
     findings = [{"id": f.get("id"), "verdict": f.get("verdict") or f.get("severity"), "title": f.get("title")}
                 for f in (found if isinstance(found, list) else []) if isinstance(f, dict)]
     return {"md": latest(bundle, "report.md"), "pdf": latest(bundle, "report.pdf"), "analysis": path, "findings": findings}
+
+
+def site_read(data):
+    """What the LLM read off the site: identity fields as (label, text) rows, plus quotes marked verified or not."""
+    data = as_dict(data)
+    found = as_dict(data.get("identity"))
+    join = lambda v: ", ".join(x for x in v if isinstance(x, str)) if isinstance(v, list) else v if isinstance(v, str) else ""
+    rows = [(label, join(found.get(key))) for key, label in (
+        ("company_name", "Name"), ("other_names", "Other names"), ("category", "Category"), ("offerings", "Sells"),
+        ("site_icp", "Sells to"), ("cities", "Cities"), ("service_area", "Serves"), ("phones", "Phones"))]
+    quotes = [q for q in as_list(found.get("evidence")) if isinstance(q, dict) and isinstance(q.get("quote"), str)]
+    return {"rows": [(label, text) for label, text in rows if text], "quotes": quotes, "pages": as_list(data.get("pages")),
+            "error": data.get("error")}
 
 
 def reputation(data):
@@ -344,7 +377,16 @@ def reputation(data):
     board = [{**r, "width": round((num(r.get("mentions")) or 0) / top * 100)} for r in board]  # Bar length vs the leader.
     scores = {**data["scores"], "leaderboard": board,
               "diverging": diverging(as_dict(data["scores"].get("sentiment")).get("score"))}
-    return {"state": None, "scores": scores, "branded": as_dict(data.get("branded")), "questions": questions}
+    branded = as_dict(data.get("branded"))
+    # The crawl dimension keeps the profile at the top level; a standalone reputation run keeps it in reputation.json.
+    profile = as_dict(data.get("profile") or branded.get("profile"))
+    return {"state": None, "scores": scores, "branded": branded, "questions": questions,
+            "audience": as_dict(data.get("audience")), "identity": as_dict(branded.get("identity")),
+            "icp_check": as_dict(data.get("icp_check")), "site_read": site_read(data.get("site_read")),
+            "profile": [(label, ", ".join(v for v in profile[key] if isinstance(v, str)))
+                        for key, label in (("names", "Names"), ("cities", "Cities"), ("phones", "Phones"),
+                                           ("categories", "Categories"), ("profiles", "Profiles"))
+                        if isinstance(profile.get(key), list) and profile[key]]}
 
 
 LEVEL = {"PASS": "good", "COMPLETE": "good", "OBSERVED": "good", "WARNING": "warning", "PARTIAL": "warning",
@@ -466,7 +508,8 @@ def tiles(model, raw):
         rank, rate = num(s.get("rank")), num(s.get("mention_rate"))
         named = f" · named in {round(rate * 100)}% of buyer answers" if rate is not None else ""
         out.append(tile("AI reputation", "#reputation", f"#{rank}" if rank else "—",
-                        (f"of {s.get('of')} companies" if rank else "not named by the AI") + named,
+                        (f"of {s.get('of')} companies" if rank else "unknown to the AI: needs more exposure"
+                         if s.get("visibility") == "not_found" else "not named by the AI") + named,
                         "good" if rank == 1 else "warning" if rank else "serious",
                         f"Sentiment {signed(as_dict(s.get('sentiment')).get('score'))}", meter(rate, 1)))
     elif "legacy" in rep:
@@ -534,10 +577,17 @@ def attention(model, raw):
     s = model["reputation"].get("scores")
     if s is not None:
         score = as_dict(s.get("sentiment")).get("score")
-        if not num(s.get("rank")):
+        if s.get("visibility") == "not_found":
+            add("serious", "AI doesn't know this business: not recognized by name or named in any buyer answer", "#reputation")
+        elif not num(s.get("rank")):
             add("serious", "Not named in any AI buyer answer", "#reputation")
         if num(score) is not None and score < 0:
             add("serious", f"Negative AI sentiment ({signed(score)})", "#reputation")
+        if model["reputation"]["icp_check"].get("verdict") == "misaligned":
+            add("warning", "Your ICP doesn't match who the website sells to", "#reputation")
+        conflict = model["reputation"]["identity"].get("conflict")
+        if model["reputation"]["identity"].get("verdict") == "mismatch" and isinstance(conflict, list):
+            add("serious", f"AI describes a different business under this name ({', '.join(map(str, conflict))} differs)", "#reputation")
     return sorted(items, key=lambda i: SEVERITY.index(i["level"]))
 
 
@@ -688,7 +738,8 @@ def standalone_reputation(bundle, host):
     answers, scores = read(run, "reputation/answers.json"), read(run, "reputation/scores.json")
     if not (isinstance(answers, dict) and isinstance(scores, dict)):
         return UNREADABLE, None
-    data = {"status": m.get("status"), "branded": read(run, "reputation/reputation.json"), "prompts": answers.get("prompts"),
+    data = {"status": m.get("status"), "branded": read(run, "reputation/reputation.json"), "audience": answers.get("audience"),
+            "prompts": answers.get("prompts"),
             "answers": answers.get("answers"), "scores": scores}
     return data, {"dir": run.name, "created_at": created, "model": m.get("model")}
 
@@ -743,7 +794,7 @@ def load(bundle, sort="issues", desc=False):
         "pages": page_cards(bundle, raw, sort if sort in SORTS else "issues", desc), "sort": sort if sort in SORTS else "issues",
         "desc": desc, "areas": AREAS,
         "sorts": [("issues", "Most issues"), ("path", "URL"), ("type", "Type")] + [(a.lower(), a) for a in AREAS]
-                 + [(k, label) for k, (_, label) in COPY.items()],
+                 + [(k, label) for k, (_, label) in COPY.items()] + [("jev", "AI slop (Jev)")],
         "site": site_cards(bundle, raw),
         "meta_ads": meta_ads_card(raw["meta_ads"]),
         "reputation": reputation(rep_raw),

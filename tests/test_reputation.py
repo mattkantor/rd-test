@@ -51,8 +51,9 @@ class ScriptedLLM:
     """Answers buyer questions from a script and extracts by schema title, so a whole ranking run is deterministic.
     Any scripted value that is an Exception is raised instead."""
 
-    def __init__(self, analysis, answers, companies, generated=(), branded="Acme Dental (acme.test) is a Toronto dentist."):
+    def __init__(self, analysis, answers, companies, generated=(), branded="Acme Dental (acme.test) is a Toronto dentist.", site=None):
         self.analysis, self.answers, self.companies, self.generated, self.branded = analysis, answers, companies, generated, branded
+        self.site = site
         self.asked, self.structured = [], []
 
     @staticmethod
@@ -75,6 +76,8 @@ class ScriptedLLM:
                 llm.structured.append((schema["title"], prompt))
                 if schema["title"] == "ReputationAnalysis":
                     return llm.reply(llm.analysis)
+                if schema["title"] == "SiteIdentity":
+                    return llm.reply(llm.site)
                 if schema["title"] == "BuyerPrompts":
                     return {"prompts": list(llm.reply(llm.generated))}
                 return {"companies": llm.reply(llm.companies.get(prompt.split("ANSWER:\n", 1)[1]))}
@@ -158,6 +161,82 @@ class RankReputationTest(unittest.TestCase):
         self.assertIn("Toronto, ON", generation)
         self.assertEqual((result["scores"]["rank"], result["scores"]["of"], result["scores"]["mention_rate"]), (2, 2, 0.5))
         self.assertEqual(result["scores"]["sentiment"]["branded"]["score"], 90)
+
+    def test_crawl_profile_catches_a_namesake(self):
+        pages = [{"url": "https://acme.test/", "telephone_numbers": [], "links": [], "json_ld": {"documents": [
+            {"@type": "Dentist", "name": "Acme Dental", "address": {"addressLocality": "Austin"}}]}}]
+        denver = {**RANK_ANALYSIS, "stated_city": "Denver", "stated_category": "dentist"}
+        answer = "Acme Dental in Denver is great, or Beta."
+        mentions = {answer: [{"name": "Acme Dental", "website": None, "city": "Denver", "position": 1, "sentiment": 0.9},
+                             {"name": "Beta", "website": None, "city": None, "position": 2, "sentiment": 0.2}]}
+        result = rank_reputation("acme.test", ScriptedLLM(denver, {"q1": [answer]}, mentions), prompts=["q1"], samples=1, pages=pages)
+        self.assertEqual(result["profile"]["names"], ["Acme Dental"])
+        self.assertEqual(result["branded"]["identity"], {"verdict": "mismatch", "agree": ["category"], "echoed": [], "conflict": ["city"]})
+        scores = result["scores"]
+        self.assertEqual((scores["recognized"], scores["rank"], scores["visibility"]), (False, None, "not_found"))
+        self.assertEqual(scores["sentiment"]["n"], 0)  # Neither the namesake's branded nor unbranded praise counts.
+        austin = {**denver, "stated_city": "Austin"}
+        result = rank_reputation("acme.test", ScriptedLLM(austin, {"q1": [ANSWER_A]}, MENTIONS), prompts=["q1"], samples=1, pages=pages)
+        self.assertEqual(result["scores"]["identity"]["verdict"], "confirmed")
+        self.assertEqual(result["scores"]["rank"], 1)
+
+    def test_scores_survive_the_report_digest_trim(self):
+        from companyscan.report.analyze import digest
+        long = "x" * 60_000  # Raw answers far past the digest's per-file cap.
+        llm = ScriptedLLM(RANK_ANALYSIS, {"q1": [long]}, {long: MENTIONS[ANSWER_A]})
+        result = rank_reputation("acme.test", llm, "Acme Dental", prompts=["q1"], samples=1)
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "technical").mkdir()
+            (Path(tmp) / "technical/llm_reputation.json").write_text(json.dumps(result))
+            text = digest(tmp)
+        self.assertIn('"rank": 1', text)
+        self.assertIn('"identity"', text)
+        self.assertIn("[trimmed:", text)
+
+    def test_site_read_fills_the_profile_audience_and_icp_check(self):
+        text = "Acme Dental is a family dental practice in Austin. We care for kids and parents. Call 512-555-0100."
+        page = lambda url, label, body: {"url": url, "classification": {"label": label}, "visible_text": body, "title": "t",
+                                         "links": [], "json_ld": {"documents": []}, "telephone_numbers": []}
+        pages = [page("https://acme.test/blog/1", "article", "Ten brushing tips."), page("https://acme.test/", "homepage", text),
+                 page("https://acme.test/careers", "careers", ""), page("https://acme.test/about", "about", "Since 1999.")]
+        site = {"company_name": "Acme Dental", "other_names": ["Acme Family Dental"], "category": "family dental practice",
+                "offerings": ["cleanings"], "cities": ["Austin"], "service_area": "Austin, TX", "phones": ["512-555-0100"],
+                "site_icp": "Austin families with kids", "icp_alignment": {"verdict": "misaligned", "reason": "Sells to families"},
+                "evidence": [{"url": "https://acme.test/", "quote": "a family  dental practice in AUSTIN", "supports": "category"},
+                             {"url": "https://acme.test/", "quote": "We fix teeth for dogs.", "supports": "offerings"}]}
+        llm = ScriptedLLM({**RANK_ANALYSIS, "stated_city": "Austin"}, {"q?": [ANSWER_A]}, MENTIONS, ["q?"], site=site)
+        result = rank_reputation("acme.test", llm, samples=1, pages=pages, icp="enterprise IT buyers")
+        read = next(p for title, p in llm.structured if title == "SiteIdentity")
+        # Homepage, then about, then the rest; empty pages skipped; the user's ICP is put to the check.
+        self.assertLess(read.index("https://acme.test/\n"), read.index("https://acme.test/about"))
+        self.assertLess(read.index("https://acme.test/about"), read.index("https://acme.test/blog/1"))
+        self.assertNotIn("careers", read)
+        self.assertIn('"enterprise IT buyers"', read)
+        self.assertEqual(result["site_read"]["pages"], ["https://acme.test/", "https://acme.test/about", "https://acme.test/blog/1"])
+        self.assertEqual([e["verified"] for e in result["site_read"]["identity"]["evidence"]], [True, False])
+        self.assertEqual(result["profile"]["names"], ["Acme Dental", "Acme Family Dental"])
+        self.assertEqual((result["profile"]["cities"], result["profile"]["phones"]), (["Austin"], ["5125550100"]))
+        self.assertEqual(result["icp_check"], {"kind": "INFERRED", "user_icp": "enterprise IT buyers",
+                                               "site_icp": "Austin families with kids", "verdict": "misaligned",
+                                               "reason": "Sells to families"})
+        self.assertEqual(result["audience"]["location"], {"value": "Austin, TX", "source": "site"})
+        self.assertEqual(result["scores"]["identity"]["verdict"], "confirmed")  # The site-read city backs the branded answer.
+        generation = next(p for title, p in llm.structured if title == "BuyerPrompts")
+        self.assertIn("Looking for: family dental practice.", generation)
+        self.assertEqual(result["status"], "COMPLETE")
+
+    def test_site_read_without_user_icp_supplies_it_and_failure_is_partial(self):
+        pages = [{"url": "https://acme.test/", "visible_text": "Dentist.", "links": [], "json_ld": {"documents": []}}]
+        site = {"site_icp": "Toronto families", "icp_alignment": {"verdict": "not_checked", "reason": None}}
+        llm = ScriptedLLM(RANK_ANALYSIS, {"q?": [ANSWER_A]}, MENTIONS, ["q?"], site=site)
+        result = rank_reputation("acme.test", llm, samples=1, pages=pages)
+        self.assertIn("not_checked", next(p for title, p in llm.structured if title == "SiteIdentity"))
+        self.assertEqual(result["audience"]["icp"], {"value": "Toronto families", "source": "site"})
+        self.assertIsNone(result["icp_check"])
+        llm = ScriptedLLM(RANK_ANALYSIS, {"q?": [ANSWER_A]}, MENTIONS, ["q?"], site=RuntimeError("timeout"))
+        result = rank_reputation("acme.test", llm, "Acme Dental", samples=1, pages=pages)
+        self.assertEqual((result["status"], result["site_read"]["error"]), ("PARTIAL", "site read failed: timeout"))
+        self.assertEqual(result["scores"]["rank"], 1)  # The rest of the check still ran.
 
     def test_user_prompts_skip_generation(self):
         llm = ScriptedLLM(RANK_ANALYSIS, {"q1": [ANSWER_B]}, MENTIONS)
