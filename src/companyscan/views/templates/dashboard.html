@@ -99,6 +99,12 @@
       and the report is one long LLM call.</small>
   </form>
 
+  <nav class="tabs" aria-label="Dashboard sections">
+    <a href="#overview">Overview</a><a href="#pages">Pages</a><a href="#site">Site-wide</a><a href="#meta_ads">Ads</a>
+    <a href="#reputation">AI reputation</a><a href="#social">Social</a><a href="#coverage">Coverage</a>
+  </nav>
+
+  <section id="overview" class="tab">
   <section class="overview">
     <div class="hero">
       <p class="label">Needs attention</p>
@@ -144,8 +150,9 @@
       </tbody></table>
     {% endif %}
   </details>
+  </section>
 
-  <section id="pages" class="pages">
+  <section id="pages" class="tab pages">
     <div class="pages-head">
       <h2>Pages <small>{{ m.pages | length }} crawled · each card groups everything checked on that page</small></h2>
       <nav class="sorts">Sort:
@@ -183,16 +190,16 @@
     </details>
   </section>
 
-  <details id="site" class="panel" open><summary>Site-wide {{ tally(m.site) }}</summary>
+  <section id="site" class="tab"><h2>Site-wide {{ tally(m.site) }}</h2>
     <div class="info-grid">{% for c in m.site %}{{ info_card(c) }}{% endfor %}</div>
-  </details>
+  </section>
 
-  <details id="meta_ads" class="panel"><summary>Meta ads {{ tally([m.meta_ads]) }}</summary>
+  <section id="meta_ads" class="tab"><h2>Meta ads {{ tally([m.meta_ads]) }}</h2>
     <div class="info-grid">{{ info_card(m.meta_ads) }}</div>
-  </details>
+  </section>
 
   {% set r = m.reputation %}
-  <details id="reputation" class="panel"><summary>AI reputation</summary>
+  <section id="reputation" class="tab"><h2>AI reputation</h2>
     {% if r.source %}<p class="note">From the separate reputation run <a href="{{ (bundle.parent / r.source.dir / 'manifest.json') | file_url }}">{{ r.source.dir }}</a>
       · {{ r.source.created_at | local_time }} · model {{ r.source.model }}. This crawl didn't include the AI reputation check.</p>{% endif %}
     {% if r.state %}<p class="muted">{{ r.state }}.</p>
@@ -249,9 +256,9 @@
     {% endif %}
     {% if r.source %}<a class="raw" href="{{ (bundle.parent / r.source.dir / 'reputation/scores.json') | file_url }}">raw scores JSON</a>
     {% elif not r.state %}{{ raw("technical/llm_reputation.json") }}{% endif %}
-  </details>
+  </section>
 
-  <details id="social" class="panel"><summary>Social &amp; identity {% set np, nn = m.profiles | length, m.names | length %}<small>{{ np }} profile{{ "s" if np != 1 }} · {{ nn }} distinct name{{ "s" if nn != 1 }}</small></summary>
+  <section id="social" class="tab"><h2>Social &amp; identity {% set np, nn = m.profiles | length, m.names | length %}<small>{{ np }} profile{{ "s" if np != 1 }} · {{ nn }} distinct name{{ "s" if nn != 1 }}</small></h2>
     <div class="info-grid">
       {% for p in m.profiles %}
       <article class="info-card lvl-{{ "good" if p.verified else "neutral" }}">
@@ -267,9 +274,9 @@
         {% else %}<p class="muted">No organization name in structured data.</p>{% endif %}
       </article>
     </div>
-  </details>
+  </section>
 
-  <details id="coverage" class="panel"><summary>Coverage &amp; limits {% set ns, ne = m.coverage.skipped.total, m.coverage.errors.total %}<small>{{ ns }} URL{{ "s" if ns != 1 }} skipped · {{ ne }} error{{ "s" if ne != 1 }}</small></summary>
+  <section id="coverage" class="tab"><h2>Coverage &amp; limits {% set ns, ne = m.coverage.skipped.total, m.coverage.errors.total %}<small>{{ ns }} URL{{ "s" if ns != 1 }} skipped · {{ ne }} error{{ "s" if ne != 1 }}</small></h2>
     <div class="info-grid">
       <article class="info-card lvl-{{ "warning" if m.coverage.skipped.total else "good" }}">
         <header><h3>Skipped URLs</h3>{{ chip("warning" if m.coverage.skipped.total else "good", m.coverage.skipped.total ~ " skipped") }}</header>
@@ -287,7 +294,7 @@
     </div>
     {% if m.coverage.raw %}<p class="files">Raw data:
       {% for f in m.coverage.raw %}<a href="{{ (bundle / f) | file_url }}">{{ f }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
-  </details>
+  </section>
 </main>
 </body>
 </html>

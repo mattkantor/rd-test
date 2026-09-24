@@ -99,7 +99,18 @@ form + form { margin-top: 6px; }
 .detail-list { margin: 0 0 8px; padding-left: 18px; font-size: 13px; color: var(--ink-2); }
 .detail-list li { overflow-wrap: anywhere; }
 .files { font-size: 13px; }
-details.panel > summary small { display: inline; margin-left: 8px; font-size: 13px; font-weight: 400; }
+/* Tabs: pure CSS via :target, so tile, anomaly and ?sort=…#pages links open their tab. Overview shows when nothing is targeted. */
+.tabs { position: sticky; top: 0; z-index: 1; display: flex; gap: 4px; overflow-x: auto; margin: 16px 0 0; padding: 8px 0 0; background: #f5f6f8; border-bottom: 1px solid var(--hairline); }
+.tabs a { padding: 8px 12px; border-bottom: 3px solid transparent; color: var(--ink-2); font-size: 14px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.tabs a:hover { color: var(--ink); }
+.tab { display: none; scroll-margin-top: 56px; padding-top: 4px; }
+.tab:target, .tab:has(:target), .dash:not(:has(.tab:target, .tab :target)) #overview { display: block; }
+.dash:not(:has(.tab:target, .tab :target)) .tabs a[href="#overview"], .dash:has(#overview:target, #report:target) .tabs a[href="#overview"],
+.dash:has(#pages:target) .tabs a[href="#pages"], .dash:has(#site:target) .tabs a[href="#site"], .dash:has(#meta_ads:target) .tabs a[href="#meta_ads"],
+.dash:has(#reputation:target) .tabs a[href="#reputation"], .dash:has(#social:target) .tabs a[href="#social"],
+.dash:has(#coverage:target) .tabs a[href="#coverage"] { color: var(--ink); border-bottom-color: var(--accent); }
+.tab > h2 { font-size: 20px; }
+.tab > h2 small { display: inline; margin-left: 8px; font-size: 13px; font-weight: 400; }
 .info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin: 12px 0; align-items: start; }
 .info-card { background: var(--surface); border: 1px solid #dfe2e7; border-top: 4px solid var(--neutral); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .info-card.lvl-good { border-top-color: var(--good); }
@@ -123,7 +134,7 @@ details > summary { cursor: pointer; font-weight: 600; font-size: 16px; }
 details.nested { border: 0; border-top: 1px solid #eceef2; border-radius: 0; padding: 8px 0; margin: 0; }
 details.nested > summary { font-size: 14px; font-weight: 500; }
 details h3 { font-size: 15px; margin: 18px 0 6px; }
-details h4 { font-size: 13px; margin: 12px 0 4px; color: #5d6470; }
+details h4, .tab h4 { font-size: 13px; margin: 12px 0 4px; color: #5d6470; }
 .scroll { overflow-x: auto; }
 table.data td { font-size: 13px; max-width: 420px; overflow-wrap: anywhere; }
 table.data tr.target td { background: #eef2ff; font-weight: 600; }
