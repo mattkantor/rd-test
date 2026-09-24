@@ -12,8 +12,8 @@ admin.site.site_header = admin.site.site_title = "Company Footprint"
 
 @admin.register(Site)
 class SiteAdmin(admin.ModelAdmin):
-    list_display = ["origin"]
-    search_fields = ["origin"]
+    list_display = ["origin", "business_name"]
+    search_fields = ["origin", "business_name"]
 
 
 @admin.register(Run)

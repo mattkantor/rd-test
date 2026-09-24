@@ -13,6 +13,8 @@ from ..scan.crawler import normalize, origin
 
 class Site(models.Model):
     origin = models.CharField(max_length=500, unique=True)
+    business_name = models.CharField(max_length=255, blank=True)
+    icp = models.TextField("ICP", blank=True)
 
     def __str__(self):
         return self.origin
