@@ -19,6 +19,24 @@
 {% macro pct(x) %}{% if x is number %}{{ "%.0f%%" | format(x * 100) }}{% else %}—{% endif %}{% endmacro %}
 {% set icons = {"good": "✓", "warning": "!", "serious": "▲", "critical": "✕", "neutral": "•"} %}
 {# Status never rides on colour alone: every chip carries an icon and a word. Levels come from our code, never bundle data. #}
+{#- Line icons, 24px grid, stroked in currentColor. Decorative: the text beside each one carries the meaning. -#}
+{% set glyphs = {
+  "sparkle": "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z M18.5 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z",
+  "id": "M3 5h18v14H3z M8.5 12.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4z M5.5 16.5c.6-1.6 1.7-2.3 3-2.3s2.4.7 3 2.3 M14 10h4 M14 13.5h3",
+  "target": "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M12 12.2v-.4",
+  "eye": "M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
+  "podium": "M2 20h20 M9 20V8h6v12 M3 20v-7h6 M15 16h6v4",
+  "bubble": "M4 5h16v11H9l-4 4v-4H4z",
+  "pie": "M12 3a9 9 0 1 0 9 9h-9z M14.5 2.8V9.5h6.7a7.5 7.5 0 0 0-6.7-6.7z",
+  "smile": "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M8.5 14.5c.9 1.2 2.1 1.8 3.5 1.8s2.6-.6 3.5-1.8 M9 9.5v.5 M15 9.5v.5",
+  "globe": "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M3 12h18 M12 3c2.5 2.6 3.7 5.6 3.7 9s-1.2 6.4-3.7 9c-2.5-2.6-3.7-5.6-3.7-9S9.5 5.6 12 3z",
+  "answer": "M4 5h16v11H9l-4 4v-4H4z M12 7.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z",
+  "question": "M4 5h16v11H9l-4 4v-4H4z M10 9a2 2 0 1 1 2.8 1.8c-.5.3-.8.7-.8 1.2v.3 M12 14.2v.3",
+  "list": "M4 6h16 M4 11h11 M4 16h6",
+  "check": "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M8 12.5l2.7 2.7L16 9.8",
+  "cross": "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M9 9l6 6 M15 9l-6 6",
+} %}
+{% macro ico(name, cls="") %}<svg class="ico {{ cls }}" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="{{ glyphs[name] }}"/></svg>{% endmacro %}
 {% macro chip(level, text) %}<span class="chip chip-{{ level }}"><span class="icon" aria-hidden="true">{{ icons.get(level, "•") }}</span>{{ text }}</span>{% endmacro %}
 {% macro plural_issues(n) %}{% if n %}{{ n }} issue{{ "s" if n != 1 }}{% else %}No issues{% endif %}{% endmacro %}
 {% macro tally(cards) -%}
@@ -203,7 +221,7 @@
   </section>
 
   {% set r = m.reputation %}
-  <section id="reputation" class="tab"><h2>AI reputation</h2>
+  <section id="reputation" class="tab reputation"><h2>{{ ico("sparkle", "accent") }} AI reputation</h2>
     {% if r.source %}<p class="note">From the separate reputation run <a href="{{ (bundle.parent / r.source.dir / 'manifest.json') | file_url }}">{{ r.source.dir }}</a>
       · {{ r.source.created_at | local_time }} · model {{ r.source.model }}. This crawl didn't include the AI reputation check.</p>{% endif %}
     {% if r.state %}<p class="muted">{{ r.state }}.</p>
@@ -213,36 +231,37 @@
       <h4>Branded answer</h4><pre>{{ r.legacy.answer }}</pre>
       <h4>Competitors</h4>{{ tbl(r.legacy.competitors) }}
     {% else %}{% set s = r.scores %}
-      {% if s.visibility == "not_found" %}<p><span class="st st-fail">NOT FOUND</span> The model didn't recognize this business when
-        asked by name and never named it in {{ s.answers_scored }} buyer answers. It needs more exposure (listings, reviews,
-        press, directories) before AI assistants will recommend it.</p>{% endif %}
-      {% set idn = r.identity %}{% if idn.verdict %}<p class="note">Identity check on the branded answer:
-        {% if idn.verdict == "mismatch" %}<span class="st st-fail">NAMESAKE</span> the model described a different business
-          ({{ idn.conflict | join(", ") }} differs from this site), so its answer isn't counted as recognition or sentiment.
-        {% elif idn.verdict == "confirmed" %}<span class="st st-pass">CONFIRMED</span> {{ idn.agree | join(", ") }} matches this site.
-        {% else %}<span class="st st-unknown">UNCONFIRMED</span> the answer stated nothing checkable beyond what the prompt gave it.{% endif %}</p>{% endif %}
-      {% set icp = r.icp_check %}{% if icp.verdict %}<p class="note">ICP check <small>(inferred by the model from the website)</small>:
-        <span class="st {{ {'aligned': 'st-pass', 'partial': 'st-warning', 'misaligned': 'st-fail'}.get(icp.verdict, 'st-unknown') }}">{{ icp.verdict | upper }}</span>
-        your ICP <strong>{{ icp.user_icp }}</strong>; the site sells to <strong>{{ icp.site_icp or "unclear" }}</strong>.
-        {% if icp.reason %}{{ icp.reason }}{% endif %}</p>{% endif %}
-      {% set sr = r.site_read %}{% if sr.rows or sr.error %}<details class="nested"><summary>What the website says (model's read of {{ sr.pages | length }} pages)</summary>
-        {% if sr.error %}<p><span class="st st-unknown">UNKNOWN</span> {{ sr.error }}</p>{% endif %}
+      <div class="verdicts">
+        {% for v in r.verdicts %}
+        <div class="verdict verdict-{{ v.level }}">
+          <span class="badge">{{ ico(v.icon) }}</span>
+          <p class="label">{{ v.label }}</p>
+          <p class="word">{{ v.word }}</p>
+          <p class="detail">{{ v.detail }}
+            {%- if v.key == "icp" and v.level == "neutral" and site %} <a href="/site/{{ site.pk }}/edit">Edit profile</a>{% endif %}</p>
+          {% if v.user_icp %}<dl class="icp-pair"><dt>Your ICP</dt><dd>{{ v.user_icp }}</dd><dt>Site sells to</dt><dd>{{ v.site_icp or "unclear" }}</dd></dl>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% if r.icp_check.verdict %}<p class="note">The ICP fit is the model's judgment from the website text, not proof.</p>{% endif %}
+      {% set sr = r.site_read %}{% if sr.rows or sr.error %}<details class="nested"><summary>{{ ico("globe") }} What the website says <small>the model's read of {{ sr.pages | length }} pages</small></summary>
+        {% if sr.error %}<p class="muted">Couldn't read the site: {{ sr.error }}</p>{% endif %}
         <dl class="facts">{% for label, value in sr.rows %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
-        {% if sr.quotes %}<ul class="detail-list">{% for q in sr.quotes %}<li>{{ "✔" if q.verified else "✘ not found on the page:" }}
-          “{{ q.quote }}” <small>{{ q.supports }} · {{ val(q.url) }}</small></li>{% endfor %}</ul>{% endif %}</details>{% endif %}
-      {% if r.profile %}<details class="nested"><summary>Identity profile (from the crawl and site details)</summary>
+        {% if sr.quotes %}<ul class="quotes">{% for q in sr.quotes %}<li class="{{ 'ok' if q.verified else 'bad' }}">{{ ico("check" if q.verified else "cross") }}
+          <span>{% if not q.verified %}<em>Not found on the page:</em> {% endif %}“{{ q.quote }}” <small>{{ q.supports }} · {{ val(q.url) }}</small></span></li>{% endfor %}</ul>{% endif %}</details>{% endif %}
+      {% if r.profile %}<details class="nested"><summary>{{ ico("id") }} Identity profile <small>from the crawl and the site profile</small></summary>
         <dl class="facts">{% for label, value in r.profile %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl></details>{% endif %}
       {% set aud = r.audience %}{% if aud.icp or aud.location %}<p class="note">Buyer questions asked for
         {% for key, label in (("icp", "ICP"), ("location", "location")) %}{% set a = aud[key] %}{% if a and a.value %}{{ label }} <strong>{{ a.value }}</strong>
         <small>({{ {"user": "you", "site": "from the website"}.get(a.source, "model's guess") }})</small>{% if not loop.last %} · {% endif %}{% endif %}{% endfor %}</p>{% endif %}
       <div class="stat-row">
-        <div class="stat"><p class="label">Rank</p><p class="value">{% if s.rank %}#{{ s.rank }} of {{ s.of }}{% else %}Unranked{% endif %}</p>
+        <div class="stat"><p class="label">{{ ico("podium") }} Rank</p><p class="value">{% if s.rank %}#{{ s.rank }} of {{ s.of }}{% else %}Unranked{% endif %}</p>
           <p class="sub">{% if s.rank %}among companies named{% else %}{{ s.of }} companies named, not you{% endif %}</p></div>
-        <div class="stat"><p class="label">Mention rate</p><p class="value">{{ pct(s.mention_rate) }}</p>
+        <div class="stat"><p class="label">{{ ico("bubble") }} Mention rate</p><p class="value">{{ pct(s.mention_rate) }}</p>
           <p class="sub">of {{ s.answers_scored }} buyer answers{% if s.answers_total != s.answers_scored %} ({{ s.answers_total }} asked){% endif %}</p></div>
-        <div class="stat"><p class="label">Share of voice</p><p class="value">{{ pct(s.share_of_voice) }}</p>
+        <div class="stat"><p class="label">{{ ico("pie") }} Share of voice</p><p class="value">{{ pct(s.share_of_voice) }}</p>
           <p class="sub">of all company mentions</p></div>
-        <div class="stat"><p class="label">Sentiment</p><p class="value">{{ signed(s.sentiment.score) }}</p>
+        <div class="stat"><p class="label">{{ ico("smile") }} Sentiment</p><p class="value">{{ signed(s.sentiment.score) }}</p>
           <p class="sub">branded {{ signed(s.sentiment.branded.score) }} · unbranded {{ signed(s.sentiment.unbranded.score) }} · n={{ s.sentiment.n }}</p></div>
       </div>
       {% if s.diverging %}
@@ -253,7 +272,7 @@
         </div>
       </figure>
       {% endif %}
-      <h4>Leaderboard: mentions across buyer answers</h4>
+      <h4>{{ ico("list") }} Leaderboard: mentions across buyer answers</h4>
       <figure class="bars">
         {% for row in s.leaderboard[:10] %}
         <div class="bar-row{% if row.is_target %} is-target{% endif %}" title="{{ row.company }}: {{ row.mentions }} mentions, average position {{ row.avg_position }}">
@@ -269,8 +288,8 @@
         {% for row in s.leaderboard %}<tr{% if row.is_target %} class="target"{% endif %}><td>{{ loop.index }}</td><td>{{ row.company }}</td><td>{{ row.mentions }}</td><td>{{ row.avg_position }}</td></tr>{% endfor %}
         </tbody></table>
       </details>
-      <h4>Branded answer</h4><pre>{{ r.branded.raw_answer }}</pre>
-      <h4>Buyer questions</h4>
+      <h4>{{ ico("answer") }} What the model says when asked by name</h4><pre>{{ r.branded.raw_answer }}</pre>
+      <h4>{{ ico("question") }} Buyer questions</h4>
       {% for q in r.questions %}
         <details class="nested"><summary>{{ q.prompt }} <small>{{ q.source }} · {{ q.answers | length }} answers</small></summary>
         {% for a in q.answers %}

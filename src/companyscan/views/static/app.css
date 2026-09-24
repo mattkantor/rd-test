@@ -165,3 +165,40 @@ form.site-edit small { display: block; margin: -6px 0 12px; color: #5d6470; }
 .job-mini .bar { height: 6px; margin-bottom: 3px; }
 .job-mini a { display: block; font-size: 12px; }
 .pending { background: #fff; border: 1px solid #dfe2e7; border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; }
+
+/* AI reputation: line icons, the three-answer verdict panel, verified quotes. */
+.ico { width: 18px; height: 18px; flex: none; vertical-align: -4px; fill: none; stroke: currentColor; stroke-width: 1.6;
+       stroke-linecap: round; stroke-linejoin: round; }
+.ico.accent { color: var(--accent); }
+.reputation > h2 .ico { width: 26px; height: 26px; vertical-align: -3px; }
+.reputation h4 .ico, .reputation summary .ico { color: var(--ink-3); margin-right: 4px; }
+.reputation summary small { display: inline; font-weight: 400; margin-left: 6px; }
+.reputation .stat-row { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.stat .label { display: flex; align-items: center; gap: 6px; }
+.stat .label .ico { color: var(--accent); }
+.verdicts { --panel: #1f2a37; --panel-ink: #f8f7f5; --panel-soft: rgba(248, 247, 245, .72);
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin: 16px 0 8px;
+            background: var(--panel); border-radius: 20px; overflow: hidden; }
+/* Dividers drawn on each card's top and left edge; the panel's rounded clip hides the ones on the outer edge. */
+.verdict { display: grid; grid-template-columns: 44px 1fr; grid-template-rows: auto auto 1fr; column-gap: 14px;
+           padding: 20px 22px; color: var(--panel-ink); box-shadow: -1px 0 0 rgba(255, 255, 255, .14), 0 -1px 0 rgba(255, 255, 255, .14); }
+.verdict > :not(.badge) { grid-column: 2; }
+.verdict p { margin: 0; }
+.verdict .badge { grid-row: 1 / span 4; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%;
+                  background: rgba(255, 255, 255, .1); color: var(--panel-ink); }
+.verdict .badge .ico { width: 22px; height: 22px; vertical-align: 0; }
+.verdict-good .badge { background: #cee3d7; color: #0f3d2a; }
+.verdict-warning .badge { background: var(--warning); color: #14201e; }
+.verdict-critical .badge { background: var(--critical); color: #fff; }
+.verdict .label { color: var(--panel-soft); font-weight: 500; }
+.verdict .word { font-size: 26px; line-height: 1.15; margin: 2px 0 6px; }
+.verdict .detail { font-size: 13px; line-height: 1.45; color: var(--panel-soft); }
+.verdict a { color: var(--panel-ink); }
+.icp-pair { display: grid; grid-template-columns: max-content 1fr; gap: 2px 10px; margin: 10px 0 0; font-size: 12px; }
+.icp-pair dt { color: var(--panel-soft); }
+.icp-pair dd { margin: 0; overflow-wrap: anywhere; }
+.quotes { list-style: none; margin: 10px 0 4px; padding: 0; font-size: 13px; }
+.quotes li { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; overflow-wrap: anywhere; }
+.quotes li.ok .ico { color: var(--good); }
+.quotes li.bad .ico { color: var(--critical); }
+.quotes li.bad span { color: var(--ink-2); }

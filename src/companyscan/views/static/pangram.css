@@ -63,3 +63,8 @@ table.data tr.target td { background: var(--pg-orange-light); }
 input[type=checkbox] { accent-color: var(--pg-green); }
 form + form button { background: transparent; color: var(--pg-ink); box-shadow: inset 0 0 0 1.5px var(--pg-ink); }
 form + form button:hover { background: var(--pg-ink); color: var(--pg-bg); }
+.verdicts { --panel: var(--pg-green-dark); --panel-soft: var(--pg-mint); }
+.verdict .word { font-family: "Instrument Serif", Georgia, serif; font-weight: 400; font-size: 30px; letter-spacing: -.01em; }
+a.button { background: transparent; color: var(--pg-ink); box-shadow: inset 0 0 0 1.5px var(--pg-ink); border-radius: 999px;
+           padding: 4px 12px; font-weight: 500; }
+a.button:hover { background: var(--pg-ink); color: var(--pg-bg); }

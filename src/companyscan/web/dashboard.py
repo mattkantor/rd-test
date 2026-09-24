@@ -358,6 +358,34 @@ def site_read(data):
             "error": data.get("error")}
 
 
+def verdicts(scores, identity, icp):
+    """The reputation tab's three headline answers: right business? ICP fit? recommended? Each {key, icon, level, word, detail}."""
+    out = []
+    agree, conflict = as_list(identity.get("agree")), as_list(identity.get("conflict"))
+    word, level, detail = {
+        "confirmed": ("Confirmed", "good", f"{', '.join(map(str, agree))} match{'es' if len(agree) == 1 else ''} this site"),
+        "mismatch": ("Confused with a namesake", "critical",
+                     f"The model described another business ({', '.join(map(str, conflict))} differs)"),
+        "unconfirmed": ("Unconfirmed", "neutral", "The answer stated nothing checkable beyond what the prompt gave it"),
+    }.get(identity.get("verdict"), ("Not checked", "neutral", "This run predates the identity check"))
+    out.append({"key": "identity", "icon": "id", "label": "Right business?", "word": word, "level": level, "detail": detail})
+    word, level = {"aligned": ("Aligned", "good"), "partial": ("Partly aligned", "warning"),
+                   "misaligned": ("Misaligned", "critical")}.get(icp.get("verdict"), ("Not checked", "neutral"))
+    detail = icp.get("reason") or (f"The site sells to {icp['site_icp']}" if icp.get("site_icp") else
+                                   "Add an ICP to the site profile to check it against the website")
+    out.append({"key": "icp", "icon": "target", "label": "ICP fit", "word": word, "level": level, "detail": detail,
+                "user_icp": icp.get("user_icp"), "site_icp": icp.get("site_icp")})
+    rate = num(scores.get("mention_rate"))
+    word, level, detail = {
+        "recommended": ("Recommended", "good", f"Named in {round(rate * 100) if rate is not None else '?'}% of buyer answers"),
+        "not_recommended": ("Known, not recommended", "warning", "Recognized by name but never named in buyer answers"),
+        "not_found": ("Not found", "critical", "Not recognized by name or named in any buyer answer; it needs more "
+                                               "exposure (listings, reviews, press) before assistants recommend it"),
+    }.get(scores.get("visibility"), ("Unknown", "neutral", "No visibility result in this run"))
+    out.append({"key": "visibility", "icon": "eye", "label": "AI recommends it?", "word": word, "level": level, "detail": detail})
+    return out
+
+
 def reputation(data):
     if data in (MISSING, UNREADABLE) or not isinstance(data, dict):
         return {"state": data if data in (MISSING, UNREADABLE) else UNREADABLE}
@@ -383,6 +411,7 @@ def reputation(data):
     return {"state": None, "scores": scores, "branded": branded, "questions": questions,
             "audience": as_dict(data.get("audience")), "identity": as_dict(branded.get("identity")),
             "icp_check": as_dict(data.get("icp_check")), "site_read": site_read(data.get("site_read")),
+            "verdicts": verdicts(scores, as_dict(branded.get("identity")), as_dict(data.get("icp_check"))),
             "profile": [(label, ", ".join(v for v in profile[key] if isinstance(v, str)))
                         for key, label in (("names", "Names"), ("cities", "Cities"), ("phones", "Phones"),
                                            ("categories", "Categories"), ("profiles", "Profiles"))

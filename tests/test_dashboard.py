@@ -285,6 +285,19 @@ class LoadTest(unittest.TestCase):
         self.assertEqual(m["reputation"]["site_read"]["rows"], [("Name", "Acme Dental"), ("Sells", "cleanings, braces"), ("Sells to", "families")])
         self.assertEqual({a["text"]: a["level"] for a in m["attention"]}["Your ICP doesn't match who the website sells to"], "warning")
 
+    def test_reputation_verdicts(self):
+        scores = {**SCORED["scores"], "visibility": "recommended", "mention_rate": 0.4}
+        branded = {**SCORED["branded"], "identity": {"verdict": "confirmed", "agree": ["city"], "echoed": [], "conflict": []}}
+        write(self.bundle, "technical/llm_reputation.json", {**SCORED, "scores": scores, "branded": branded})
+        v = {x["key"]: (x["level"], x["word"], x["detail"]) for x in load(self.bundle)["reputation"]["verdicts"]}
+        self.assertEqual(v["identity"], ("good", "Confirmed", "city matches this site"))
+        self.assertEqual(v["icp"][:2], ("neutral", "Not checked"))
+        self.assertEqual(v["visibility"], ("good", "Recommended", "Named in 40% of buyer answers"))
+        branded["identity"] = {"verdict": "mismatch", "agree": [], "echoed": [], "conflict": ["city", "phone"]}
+        write(self.bundle, "technical/llm_reputation.json", {**SCORED, "scores": {**scores, "visibility": "not_found"}, "branded": branded})
+        v = {x["key"]: (x["level"], x["word"]) for x in load(self.bundle)["reputation"]["verdicts"]}
+        self.assertEqual((v["identity"], v["visibility"]), (("critical", "Confused with a namesake"), ("critical", "Not found")))
+
     def test_generic_font_keywords_do_not_count(self):
         families = [{"family": f, "pages": 3} for f in ("sans-serif", "Archivo", "Helvetica Neue", "Arial", "inherit", "system-ui")]
         write(self.bundle, "technical/fonts.json", {"distinct_families": 6, "families": families})
@@ -347,9 +360,11 @@ class DashboardPageTest(WebCase):  # Skipped outside python manage.py test.
         check = {"user_icp": "hospitals", "site_icp": "families", "verdict": "partial", "reason": "Some overlap"}
         full_bundle(self.root, reputation={**SCORED, "icp_check": check, "site_read": read})
         page = self.client.get("/run/acme").text
-        self.assertIn('class="st st-warning">PARTIAL</span>', page)
-        self.assertIn("the site sells to <strong>families</strong>", page)
-        self.assertIn("✘ not found on the page:", page)
+        self.assertIn('<div class="verdict verdict-warning">', page)
+        self.assertIn('<p class="word">Partly aligned</p>', page)
+        self.assertIn("<dt>Site sells to</dt><dd>families</dd>", page)
+        self.assertIn('<li class="bad">', page)
+        self.assertIn("<em>Not found on the page:</em>", page)
         self.assertIn("&lt;script&gt;x&lt;/script&gt;", page)
         self.assertNotIn("<script>x</script>", page)
 
