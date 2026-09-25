@@ -185,6 +185,34 @@ class RenderPdfTest(unittest.TestCase):
         printer.assert_called_once_with("/bin/chrome", md.with_suffix(".html"), md.with_suffix(".pdf"))
         self.assertIn('<span class="v v-FAIL">FAIL</span>', self.md.with_suffix(".html").read_text())
 
+    def test_designed_layout_from_analysis_json(self):
+        (self.md.parent / "analysis.json").write_text(json.dumps({
+            "security": {"verdict": "WARNING", "summary": "<script>x</script>"},
+            "findings": [{"id": "F1", "title": "Good", "severity": "PASS"},
+                         {"id": "S1", "title": "Headers", "severity": "bogus", "observation": "none",
+                          "business_impact": {"headline": "Slower deals"}}],
+            "recommendations": [{"priority": "high", "recommendation": "Add HSTS", "for_findings": ["S1"]}],
+            "llm_reputation": {"mention_rate": "n/a", "share_of_voice": 0.25, "of": 60},
+            "matrix": "not a list"}))
+
+        def fake_run(cmd, **kwargs):
+            self.assertIn("--shift-heading-level-by=1", cmd)
+            Path(cmd[cmd.index("-o") + 1]).write_text("<html><head></head><body><p>Status: FAIL</p></body></html>")
+            return done()
+
+        chrome, which = self.tools()
+        with chrome, which, patch.object(pdf_mod.subprocess, "run", side_effect=fake_run), patch.object(pdf_mod, "print_pdf"):
+            render_pdf(self.bundle)
+        out = self.md.with_suffix(".html").read_text()
+        self.assertIn('<body class="designed">', out)
+        self.assertIn("&lt;script&gt;", out)  # Model text is escaped.
+        self.assertIn('<span class="v v-UNKNOWN">UNKNOWN</span><span class="fid">S1</span>', out)  # Odd severity -> UNKNOWN issue.
+        self.assertIn("Slower deals", out)
+        self.assertIn('<span class="v v-HIGH">HIGH</span>', out)
+        self.assertIn('width:25%', out)
+        self.assertNotIn("Mention rate", out)
+        self.assertIn('<span class="v v-FAIL">FAIL</span>', out)  # Appendix still badged.
+
     def test_pandoc_failures_become_value_errors(self):
         errors = [(subprocess.CalledProcessError(1, ["/usr/bin/pandoc"], stderr=b"bad markdown"), "pandoc failed: bad markdown"),
                   (subprocess.TimeoutExpired(["/usr/bin/pandoc"], 120), "pandoc timed out")]
