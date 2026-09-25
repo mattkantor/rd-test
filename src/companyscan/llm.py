@@ -3,6 +3,7 @@ import os
 
 REPORT_MODEL = os.environ.get("COMPANYSCAN_REPORT_MODEL", "openai:gpt-5")
 REPUTATION_MODEL = os.environ.get("COMPANYSCAN_REPUTATION_MODEL", "openai:gpt-4o-mini")
+SEARCH_MODEL = os.environ.get("COMPANYSCAN_SEARCH_MODEL", "openai:gpt-5-mini")  # Needs OpenAI's web_search tool.
 
 
 def chat_model(name, **kwargs):

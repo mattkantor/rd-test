@@ -6,7 +6,7 @@ check() compares the facts an answer states against it. Plain Python: the LLM ex
 import re
 from urllib.parse import urlsplit
 
-from ..scan.schema import objects
+from ..scan.schema import entities, objects
 from ..scan.social import discover_profiles
 
 ORG_TYPES = {"Organization", "Corporation", "LocalBusiness", "ProfessionalService", "Store", "MedicalBusiness", "Dentist"}
@@ -52,10 +52,11 @@ def build(domain, pages=(), company_name=None, location=None, site=None):
     if isinstance(location, str):
         add(profile["cities"], location.split(",")[0])  # "Austin, TX, USA" -> Austin.
     for page in pages:
-        for obj in objects(page.get("json_ld", {}).get("documents", [])):
-            add(profile["cities"], obj.get("addressLocality"))
+        for obj in entities(page.get("json_ld", {}).get("documents", [])):
             if not is_org(obj):
                 continue
+            for part in objects(obj.get("address")):
+                add(profile["cities"], part.get("addressLocality"))
             for key in ("name", "alternateName", "legalName"):
                 for name in as_list(obj.get(key)):
                     add(profile["names"], name)

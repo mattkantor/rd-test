@@ -99,8 +99,8 @@
     <input type="hidden" name="dir" value="{{ bundle.name }}">
     <input type="hidden" name="return_to" value="{{ 'site' if on_site else 'dashboard' }}">
     <button data-busy {% if running %}disabled{% endif %}>Re-crawl + report</button>
-    <small>Crawls again with every check (WCAG, analytics, AEO, social previews, security, fonts, AI reputation, Meta ads), then writes
-      the report and PDF for the new run. This run is kept. Expect a few minutes: AI reputation makes about 50 LLM calls,
+    <small>Crawls again with every check (WCAG, analytics, AEO, social previews, security, fonts, AI reputation, AI search, answer coverage, practitioner profiles, Google listing, Meta ads), then writes
+      the report and PDF for the new run. This run is kept. Expect a few minutes: AI reputation and AI search each make about 50 LLM calls,
       and the report is one long LLM call.</small>
   </form>
 
@@ -123,7 +123,7 @@
 
   <nav class="tabs" aria-label="Dashboard sections">
     <a href="#overview">Overview</a><a href="#pages">Pages</a><a href="#site">Site-wide</a><a href="#meta_ads">Ads</a>
-    <a href="#reputation">AI reputation</a><a href="#social">Social</a><a href="#coverage">Coverage</a>
+    <a href="#reputation">AI reputation</a><a href="#ai_search">AI search</a><a href="#answers">Answers</a><a href="#people">People</a><a href="#listing">Google</a><a href="#social">Social</a><a href="#coverage">Coverage</a>
   </nav>
 
   <section id="overview" class="tab">
@@ -156,6 +156,29 @@
     </a>
     {% endfor %}
   </section>
+
+  {% if m.since %}
+  <details id="since" open><summary>Since last run</summary>
+    {% for c in m.since %}
+    <h4><a href="{{ c.href }}">{{ c.label }}</a> <small>vs {{ c.created_at | local_time }} ({{ c.run }})</small></h4>
+    <div class="scroll"><table class="data since"><thead><tr><th></th><th>Then</th><th>Now</th><th></th></tr></thead><tbody>
+    {% for r in c.metrics %}<tr><td>{{ r.label }}</td><td>{{ r.before }}</td><td>{{ r.after }}</td>
+      <td>{% if r.trend == "better" %}{{ chip("good", "Better") }}{% elif r.trend == "worse" %}{{ chip("critical", "Worse") }}{% elif r.trend == "same" %}<span class="muted">Same</span>{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% for d in c.details %}<p class="note">{{ d }}</p>{% endfor %}
+    {% if c.same_questions is defined %}
+      {% if not c.same_questions %}<p class="note">Different questions from that run, so only the totals compare.</p>
+      {% elif c.questions %}<details class="nested"><summary>Questions that changed <small>{{ c.questions | length }} of {{ c.same_questions }} asked both times</small></summary>
+        <table class="data"><thead><tr><th>Question</th><th>Then</th><th>Now</th><th></th></tr></thead><tbody>
+        {% for q in c.questions %}<tr><td>{{ q.text }}</td><td>{{ q.before }}</td><td>{{ q.after }}</td><td>{% if q.trend == "better" %}{{ chip("good", "Better") }}{% elif q.trend == "worse" %}{{ chip("critical", "Worse") }}{% endif %}</td></tr>{% endfor %}
+        </tbody></table></details>
+      {% else %}<p class="note">All {{ c.same_questions }} questions asked both times scored the same.</p>{% endif %}
+      {% if c.questions_now > c.same_questions %}<p class="note">{{ c.questions_now - c.same_questions }} question{{ "s" if c.questions_now - c.same_questions != 1 }} new this run.</p>{% endif %}
+    {% endif %}
+    {% endfor %}
+    <p class="note">Model answers vary between runs even with the same questions; treat small moves as noise.</p>
+  </details>
+  {% endif %}
 
   <details id="report" open><summary>Report &amp; findings</summary>
     {% if m.report.md %}
@@ -220,8 +243,9 @@
     <div class="info-grid">{{ info_card(m.meta_ads) }}</div>
   </section>
 
-  {% set r = m.reputation %}
-  <section id="reputation" class="tab reputation"><h2>{{ ico("sparkle", "accent") }} AI reputation</h2>
+  {# The same layout for the training-data check and the web-search one; only ai_search has cited sources. #}
+  {% for tab, r, title, icon in (("reputation", m.reputation, "AI reputation", "sparkle"), ("ai_search", m.ai_search, "AI search", "globe")) %}
+  <section id="{{ tab }}" class="tab reputation"><h2>{{ ico(icon, "accent") }} {{ title }}{% if tab == "ai_search" %} <small>answers from web search</small>{% endif %}</h2>
     {% if r.source %}<p class="note">From the separate reputation run <a href="{{ (bundle.parent / r.source.dir / 'manifest.json') | file_url }}">{{ r.source.dir }}</a>
       · {{ r.source.created_at | local_time }} · model {{ r.source.model }}. This crawl didn't include the AI reputation check.</p>{% endif %}
     {% if r.state %}<p class="muted">{{ r.state }}.</p>
@@ -288,19 +312,103 @@
         {% for row in s.leaderboard %}<tr{% if row.is_target %} class="target"{% endif %}><td>{{ loop.index }}</td><td>{{ row.company }}</td><td>{{ row.mentions }}</td><td>{{ row.avg_position }}</td></tr>{% endfor %}
         </tbody></table>
       </details>
+      {% if s.sources %}<h4>{{ ico("globe") }} Sources the engine cited <small>buyer answers citing each site</small></h4>
+      <figure class="bars">
+        {% for row in s.sources[:10] %}
+        <div class="bar-row{% if row.is_target %} is-target{% endif %}" title="{{ row.domain }}: cited in {{ row.answers }} answers ({{ row.citations }} citations)">
+          <span class="bar-label">{{ loop.index }}. {{ row.domain }}{% if row.is_target %} (you){% endif %}</span>
+          <span class="bar-track"><span class="bar-fill" style="width: {{ row.width }}%"></span></span>
+          <span class="bar-value">{{ row.answers }}</span>
+        </div>
+        {% endfor %}
+        {% if s.sources | length > 10 %}<small>Top 10 of {{ s.sources | length }} sites.</small>{% endif %}
+      </figure>
+      <p class="note">The sites this engine looked at to answer buyers in this market. Being listed and reviewed on them is how a business gets into these answers.</p>
+      {% endif %}
       <h4>{{ ico("answer") }} What the model says when asked by name</h4><pre>{{ r.branded.raw_answer }}</pre>
       <h4>{{ ico("question") }} Buyer questions</h4>
       {% for q in r.questions %}
         <details class="nested"><summary>{{ q.prompt }} <small>{{ q.source }} · {{ q.answers | length }} answers</small></summary>
         {% for a in q.answers %}
           <div class="answer"><small>Sample {{ a.sample }}{% if a.named %} · named: {{ a.named }}{% endif %}</small>
-          {% if a.error %}<p class="st st-fail">{{ a.error }}</p>{% else %}<pre>{{ a.raw_answer }}</pre>{% endif %}</div>
+          {% if a.error %}<p class="st st-fail">{{ a.error }}</p>{% else %}<pre>{{ a.raw_answer }}</pre>{% endif %}
+          {% if a.sources %}<ul class="sources">{% for c in a.sources %}{% set h = c.url | href %}<li>{% if h %}<a href="{{ h }}" rel="noopener noreferrer" target="_blank">{{ c.title or c.url }}</a>{% else %}{{ c.title or c.url }}{% endif %}</li>{% endfor %}</ul>{% endif %}</div>
         {% endfor %}
         </details>
       {% endfor %}
     {% endif %}
     {% if r.source %}<a class="raw" href="{{ (bundle.parent / r.source.dir / 'reputation/scores.json') | file_url }}">raw scores JSON</a>
-    {% elif not r.state %}{{ raw("technical/llm_reputation.json") }}{% endif %}
+    {% elif not r.state %}{{ raw("technical/" ~ ("ai_search" if tab == "ai_search" else "llm_reputation") ~ ".json") }}{% endif %}
+  </section>
+  {% endfor %}
+
+  {% set a = m.answers %}
+  <section id="answers" class="tab"><h2>{{ ico("question", "accent") }} Answer coverage {% if a.summary %}<small>{{ a.summary.answered or 0 }} answered · {{ a.summary.partial or 0 }} partly · {{ a.summary.missing or 0 }} not answered, of {{ a.summary.questions }} buyer questions</small>{% endif %}</h2>
+    {% if a.state %}<p class="muted">{{ a.state }}.</p>
+    {% elif a.unknown is defined %}<p><span class="st st-unknown">UNKNOWN</span>: {{ a.unknown }}</p>
+    {% else %}
+      <p class="note">High-intent questions a buyer might ask an AI assistant, written by a model from the site's own offerings, and whether a crawled page answers each one. The verdicts are the model's judgment (INFERRED), not proof.</p>
+      <div class="scroll"><table class="data"><thead><tr><th>Question</th><th>Kind</th><th>Coverage</th><th>Closest page</th><th>What's missing</th></tr></thead><tbody>
+      {% for q in a.rows %}<tr>
+        <td>{{ q.question }}{% if q.offering %}<small> · {{ q.offering }}</small>{% endif %}</td><td>{{ q.intent }}</td>
+        <td>{{ chip(q.level, q.word) }}{% if q.error %}<small class="st st-fail"> {{ q.error }}</small>{% endif %}</td>
+        <td>{% if q.best_url %}{{ val(q.best_url) }}{% if q.quote %}<small class="{{ 'ok' if q.verified else 'bad' }}"><br>{% if not q.verified %}<em>Not found on the page:</em> {% endif %}“{{ q.quote }}”</small>{% endif %}{% else %}—{% endif %}</td>
+        <td>{{ q.gap or "" }}</td></tr>{% endfor %}
+      </tbody></table></div>
+      {% if a.limitations %}<details class="nested"><summary>Limits</summary><ul>{% for x in a.limitations %}<li>{{ x }}</li>{% endfor %}</ul></details>{% endif %}
+      {{ raw("technical/answer_coverage.json") }}
+    {% endif %}
+  </section>
+
+  {% set pp = m.people %}
+  <section id="people" class="tab"><h2>{{ ico("id", "accent") }} Practitioner profiles {% if pp.summary %}<small>{{ pp.summary.practitioners }} practitioner{{ "s" if pp.summary.practitioners != 1 }} · {{ pp.summary.with_dedicated_page or 0 }} with their own page · {{ pp.summary.with_person_schema or 0 }} with Person schema</small>{% endif %}</h2>
+    {% if pp.state %}<p class="muted">{{ pp.state }}.</p>
+    {% elif pp.unknown is defined %}<p><span class="st st-unknown">UNKNOWN</span>: {{ pp.unknown }}</p>
+    {% else %}
+      <p class="note">The professionals a buyer chooses between, and what their profiles on this site show. Read by a model from the people pages (INFERRED); Person schema is matched by name.</p>
+      {% if not pp.rows %}<p class="muted">No practitioners found on the pages read.</p>{% else %}
+      <div class="scroll"><table class="data"><thead><tr><th>Practitioner</th>{% for label in pp.labels %}<th>{{ label }}</th>{% endfor %}</tr></thead><tbody>
+      {% for p in pp.rows %}<tr><td>{{ p.name }}{% if p.role %}<small><br>{{ p.role }}</small>{% endif %}</td>
+        {% for label, ok in p.checks %}<td title="{{ label }}">{{ ico("check") if ok else "—" }}</td>{% endfor %}</tr>{% endfor %}
+      </tbody></table></div>
+      {% for p in pp.rows %}<details class="nested"><summary>{{ p.name }} <small>{{ p.score }} of {{ pp.labels | length }}{% if p.profile_url %} · {{ p.profile_url }}{% endif %}</small></summary>
+        {% if p.facts %}<dl class="facts">{% for label, value in p.facts %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>{% endif %}
+        {% if p.same_as %}<p>sameAs: {% for u in p.same_as %}{{ val(u) }}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+        {% if p.quotes %}<ul class="quotes">{% for q in p.quotes %}<li class="{{ 'ok' if q.verified else 'bad' }}">{{ ico("check" if q.verified else "cross") }}
+          <span>{% if not q.verified %}<em>Not found on the page:</em> {% endif %}“{{ q.quote }}” <small>{{ q.supports }} · {{ val(q.url) }}</small></span></li>{% endfor %}</ul>{% endif %}
+      </details>{% endfor %}
+      {% endif %}
+      {% if pp.unmatched %}<p class="note">Person schema not matched to a practitioner: {% for s in pp.unmatched %}<strong>{{ s.name }}</strong> ({{ s.pages | length }} page{{ "s" if s.pages | length != 1 }}){% if not loop.last %}, {% endif %}{% endfor %}. Often blog-author markup.</p>{% endif %}
+      {% if pp.limitations %}<details class="nested"><summary>Limits</summary><ul>{% for x in pp.limitations %}<li>{{ x }}</li>{% endfor %}</ul></details>{% endif %}
+      {{ raw("technical/practitioners.json") }}
+    {% endif %}
+  </section>
+
+  {% set g = m.listing %}
+  <section id="listing" class="tab"><h2>{{ ico("globe", "accent") }} Google Business Profile {% if g.found %}<small>{{ g.listing.name }}{% if g.reviews.rating %} · {{ g.reviews.rating }}★ from {{ g.reviews.count }} reviews{% endif %}</small>{% endif %}</h2>
+    {% if g.state %}<p class="muted">{{ g.state }}.</p>
+    {% elif g.unknown is defined %}<p><span class="st st-unknown">UNKNOWN</span>: {{ g.unknown }}</p>
+    {% elif not g.found %}
+      <p>{{ chip("warning", "Not found") }} No result for <strong>{{ g.query }}</strong> has this site's website or phone, so none was treated as this business. That's not proof there's no listing; check the candidates.</p>
+      {% if g.candidates.rows %}<details class="nested"><summary>Candidates ({{ g.candidates.total }})</summary>{{ tbl(g.candidates) }}</details>{% endif %}
+    {% else %}
+      <p class="note">Matched by its {{ g.matched_by }} · searched for <strong>{{ g.query }}</strong>{% if g.listing.maps %} · {{ val(g.listing.maps) }}{% endif %}</p>
+      <div class="scroll"><table class="data"><thead><tr><th>Fact</th><th>Google lists</th><th>Website states</th><th></th></tr></thead><tbody>
+      {% for c in g.checks %}<tr><td>{{ c.field }}</td><td>{{ c.google if c.google is not none else "—" }}</td><td>{{ c.site if c.site is not none else ("found on the site" if c.agrees is sameas true else "—") }}</td><td>{{ chip(c.level, c.word) }}</td></tr>{% endfor %}
+      </tbody></table></div>
+      {% set rv = g.reviews %}
+      <div class="stat-row">
+        <div class="stat"><p class="label">{{ ico("smile") }} Rating</p><p class="value">{{ rv.rating if rv.rating is not none else "—" }}</p><p class="sub">Google average</p></div>
+        <div class="stat"><p class="label">{{ ico("bubble") }} Reviews</p><p class="value">{{ rv.count if rv.count is not none else "—" }}</p><p class="sub">total on Google</p></div>
+        <div class="stat"><p class="label">{{ ico("list") }} Detailed</p><p class="value">{{ rv.sample_detailed or 0 }} of {{ rv.sample or 0 }}</p><p class="sub">sampled reviews with 20+ words</p></div>
+        <div class="stat"><p class="label">{{ ico("answer") }} Latest sampled</p><p class="value">{{ (rv.sample_latest or "—")[:10] }}</p><p class="sub">Google's sample is by relevance, not date</p></div>
+      </div>
+      {% if g.review_rows %}<h4>{{ ico("bubble") }} Reviews Google returned</h4>
+      {% for r in g.review_rows %}<div class="answer"><small>{{ r.rating }}★ · {{ r.relative or (r.published or "")[:10] }} · {{ r.words }} words</small><pre>{{ r.text }}</pre></div>{% endfor %}{% endif %}
+      {% if g.listing.hours %}<details class="nested"><summary>Hours on Google</summary><ul>{% for h in g.listing.hours %}<li>{{ h }}</li>{% endfor %}</ul></details>{% endif %}
+    {% endif %}
+    {% if g.limitation %}<p class="note">{{ g.limitation }}</p>{% endif %}
+    {% if not g.state %}{{ raw("technical/google_business.json") }}{% endif %}
   </section>
 
   <section id="social" class="tab"><h2>Social &amp; identity {% set np, nn = m.profiles | length, m.names | length %}<small>{{ np }} profile{{ "s" if np != 1 }} · {{ nn }} distinct name{{ "s" if nn != 1 }}</small></h2>

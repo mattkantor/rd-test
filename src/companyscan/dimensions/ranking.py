@@ -72,3 +72,16 @@ def score(domain, answers, company_name=None, branded_sentiment=None, profile=No
             "share_of_voice": round(mine / total, 3) if total else None,
             "sentiment": {**summarize(branded + unbranded), "branded": summarize(branded), "unbranded": summarize(unbranded)},
             "answers_total": len(answers), "answers_scored": len(scored)}
+
+
+def cited(answers, domain):
+    """Domains the answers cite as sources, most-cited first: which sites the engine leans on for this market."""
+    counts, rows = Counter(), defaultdict(set)
+    for i, answer in enumerate(answers):
+        for source in answer.get("sources") or []:
+            key = company_key("", source.get("url")) if isinstance(source, dict) else ""
+            if key:
+                counts[key] += 1
+                rows[key].add(i)
+    return sorted(({"domain": k, "citations": n, "answers": len(rows[k]), "is_target": k == domain} for k, n in counts.items()),
+                  key=lambda r: (-r["answers"], -r["citations"], r["domain"]))

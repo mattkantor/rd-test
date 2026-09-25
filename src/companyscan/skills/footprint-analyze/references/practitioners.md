@@ -1,0 +1,16 @@
+# Practitioner profiles
+
+Source: `technical/practitioners.json`: the practitioners a buyer chooses between (dentists, doctors, lawyers, advisors), read by one model from up to 8 people pages (`pages_read`):
+- `practitioners[]`: `name`, `role`, `credentials`, `education`, `associations`, `focus`, `experience`, `media`, `community` (what the page text states), `profile_url`, `evidence` quotes with `verified`, `person_schema` (the matching Person JSON-LD: its properties in `fields`, `same_as` links and `pages`; null if none), and `checks` (true/false per profile element, including `dedicated_page`, `person_schema` and `same_as`).
+- `summary`: counts. `schema_people_unmatched`: Person markup that matched no practitioner, usually blog-author markup, sometimes the business marked up as a Person.
+
+The profile facts are INFERRED from page text; `checks.dedicated_page` is decided in code (a page shared by several practitioners is not dedicated). Use the verdicts and citation shape from [analysis-rubric.md](analysis-rubric.md), and give every finding a `business_impact` per [business-impact.md](business-impact.md). Finding IDs use a `P` prefix. If `status` is `UNKNOWN`, say why (`no_people_pages` means no page looked like a team or profile page) and stop.
+
+- **Why it matters:** buyers choose a person as much as a business, and answer engines judge expertise by person as well as by domain. A practitioner with a substantial, verifiable profile (credentials, training, associations, focus, media, community), marked up as a Person and linked (`sameAs`) to the same identity elsewhere, is an entity an assistant can recognize and recommend. A name on a shared team page isn't.
+- **Verdict per practitioner:** PASS with their own page, credentials, and at least three of education / associations / focus / experience / media / community, plus Person schema. WARNING if the profile is substantive but shared or unmarked. FAIL if it's a name with little more. Don't add these up into a score.
+- **Findings:** lead with the pattern across practitioners (e.g. "all four share one team page; none has Person schema or sameAs links"). Then name the thin profiles and what each lacks. Cite `profile_url` and verified quotes. A quote with `verified: false` is not evidence.
+- **Schema:** report practitioners without `person_schema`, and matched Persons without `same_as` (no link to their association, directory or LinkedIn profiles). If `schema_people_unmatched` shows the business itself as a Person (for example, as blog author), say so: it marks the organization up as a person and credits no practitioner with the content.
+- **Heuristic:** the model may miss someone or list staff who aren't practitioners. Say the list comes from the pages read, not a verified roster.
+- **Recommendations:** a dedicated page per practitioner, with the missing elements named. Person JSON-LD (`jobTitle`, `honorificSuffix`, `alumniOf`, `memberOf`, `knowsAbout`, `worksFor`, `sameAs`). Consistent `sameAs` links to the association directory, LinkedIn and other profiles. Credit practitioners as authors of the content they write.
+
+Add a `practitioners` object `{verdict, summary, practitioners: [{name, verdict, missing}], findings}` to `analysis.json` and a **Practitioner profiles** section to `report.md`.

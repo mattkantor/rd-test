@@ -8,12 +8,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from ..llm import REPUTATION_MODEL, chat_model
+from ..llm import REPUTATION_MODEL, SEARCH_MODEL, chat_model
 from ..models import SCHEMA_VERSION, now
 from ..scan.artifacts import write_json
 from ..scan.crawler import normalize
 from . import identity
-from .ranking import score
+from .ranking import cited, score
 
 PROMPT = ("What do you know about the company at {domain}{name}{location}? Who is its ideal customer profile and where "
           "does it operate? How does it compare to others serving that customer in that location, and who are its main "
@@ -63,6 +63,22 @@ LIMITATIONS = ["Scores come from a small sample of one model's answers on one da
                "site_read is one model's INFERRED reading of up to 6 crawled pages (homepage, about, services first); its "
                "evidence quotes are checked against the captured text, its other fields are not",
                "icp_check is that model's INFERRED judgment of whether the site sells to the user's ICP, not proof"]
+SEARCH_LIMITATIONS = [("Answers use one model's web search on one date; results vary by date, searcher location and engine, "
+                       "and cited sources are what that engine chose to cite, not a full list")
+                      if line.startswith("No web search") else line for line in LIMITATIONS]
+
+
+def previous(client, name):
+    """The newest earlier run's technical/<name>.json for this site, as (run directory name, data); (None, None) if none.
+    client.previous_runs comes from cli.run(): earlier runs asked for the same ICP and location, newest first."""
+    for run in getattr(client, "previous_runs", None) or ():
+        try:
+            data = json.loads((Path(run) / f"technical/{name}.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict) and data.get("status") != "UNKNOWN":
+            return Path(run).name, data
+    return None, None
 
 
 def text(message):
@@ -72,15 +88,27 @@ def text(message):
     return str(content)
 
 
-def check_reputation(domain, llm, company_name=None, location=None, profile=None):
+def citations(message):
+    """URLs a search-grounded answer cites: annotations on its content blocks (OpenAI url_citation, LangChain citation)."""
+    content, found = getattr(message, "content", message), {}
+    for block in content if isinstance(content, list) else []:
+        for note in (block.get("annotations") or []) if isinstance(block, dict) else []:
+            if isinstance(note, dict) and isinstance(note.get("url"), str):
+                found.setdefault(note["url"], {"url": note["url"], "title": note.get("title")})
+    return list(found.values())
+
+
+def check_reputation(domain, llm, company_name=None, location=None, profile=None, answerer=None):
     """Run the buyer-style prompt, then extract structure from the answer. `llm` is any LangChain chat model.
     location (e.g. "Austin, TX, USA") helps the model pick out a local business. profile (identity.build) is what the
-    answer's stated facts are checked against, to tell this company from a namesake."""
+    answer's stated facts are checked against, to tell this company from a namesake. answerer (default llm) writes the
+    answer, e.g. a web-search model; llm always does the extraction."""
     host = urlsplit(normalize(domain)).netloc
     prompt = PROMPT.format(domain=host, name=f" ({company_name})" if company_name else "",
                            location=f" in {location}" if location else "")
+    message = (answerer or llm).invoke(prompt)
     record = {"schema_version": SCHEMA_VERSION, "domain": host, "company_name": company_name, "prompt": prompt,
-              "asked_at": now(), "raw_answer": text(llm.invoke(prompt)), "analysis": None, "status": "COMPLETE"}
+              "asked_at": now(), "raw_answer": text(message), "sources": citations(message), "analysis": None, "status": "COMPLETE"}
     haystack = record["raw_answer"].lower()
     record["domain_mentioned"] = any(term.lower() in haystack for term in (host.removeprefix("www."), company_name) if term)
     try:
@@ -204,10 +232,11 @@ def generate_prompts(llm, domain, icp, location, n, company_name=None, category=
     return list(dict.fromkeys(p for p in kept if not any(b.search(p.lower()) for b in banned)))[:n]
 
 
-def ask(llm, prompt, number):
-    row = {"prompt": prompt, "sample": number, "asked_at": now(), "raw_answer": None, "companies": None, "error": None}
+def ask(llm, prompt, number, answerer=None):
+    row = {"prompt": prompt, "sample": number, "asked_at": now(), "raw_answer": None, "sources": [], "companies": None, "error": None}
     try:
-        row["raw_answer"] = text(llm.invoke(prompt))
+        message = (answerer or llm).invoke(prompt)
+        row["raw_answer"], row["sources"] = text(message), citations(message)
         row["companies"] = structured(llm, MENTIONS_SCHEMA, EXTRACT.format(answer=row["raw_answer"]), "companies")
     except Exception as exc:  # One failed sample is recorded and excluded; the rest still score.
         row["error"] = str(exc)
@@ -217,10 +246,10 @@ def ask(llm, prompt, number):
 WORKERS = 8  # ponytail: fixed pool; lower it if the provider rate-limits.
 
 
-def ask_buyers(llm, prompts, samples, progress=None):
+def ask_buyers(llm, prompts, samples, progress=None, answerer=None):
     jobs = [(prompt, number) for prompt in prompts for number in range(1, samples + 1)]
     with ThreadPoolExecutor(WORKERS) as pool:
-        futures = [pool.submit(ask, llm, prompt, number) for prompt, number in jobs]
+        futures = [pool.submit(ask, llm, prompt, number, answerer) for prompt, number in jobs]
         for done, _ in enumerate(as_completed(futures), 1):
             if progress:
                 progress(done, len(jobs), "buyer answers")
@@ -233,18 +262,20 @@ def visibility(recognized, rank):
 
 
 def rank_reputation(domain, llm, company_name=None, prompts=None, samples=3, num_prompts=8, progress=None,
-                    icp=None, location=None, pages=()):
+                    icp=None, location=None, pages=(), answerer=None, source=None):
     """Site read, branded check, then unbranded buyer questions sampled and scored into a rank and sentiment.
     pages (crawled page records) are read by the LLM and, with their JSON-LD, build the identity profile that tells this
     company from namesakes. icp/location are user-supplied; without them the buyer questions use what the site says,
-    then what the branded answer inferred. A user icp is checked against who the site sells to."""
+    then what the branded answer inferred. A user icp is checked against who the site sells to. source labels given
+    prompts ("previous" when reused from an earlier run; default "user"). answerer (default llm)
+    writes the branded and buyer answers; llm reads the site, writes the questions and does every extraction."""
     host = urlsplit(normalize(domain)).netloc.removeprefix("www.")
     site = read_site(llm, host, pages, icp) if pages else None
     found = (site or {}).get("identity") or {}
     profile = identity.build(domain, pages, company_name, location, found)
-    branded = check_reputation(domain, llm, company_name, location, profile)
+    branded = check_reputation(domain, llm, company_name, location, profile, answerer)
     namesake = branded.get("identity", {}).get("verdict") == "mismatch"
-    analysis, error, source = branded["analysis"] or {}, None, "user" if prompts else "generated"
+    analysis, error, source = branded["analysis"] or {}, None, source or ("user" if prompts else "generated")
     audience = {key: {"value": given, "source": "user"} if given else {"value": from_site, "source": "site"} if from_site
                 else {"value": analysis.get(f"inferred_{key}"), "source": "model"}
                 for key, given, from_site in (("icp", icp, found.get("site_icp")), ("location", location, found.get("service_area")))}
@@ -260,12 +291,13 @@ def rank_reputation(domain, llm, company_name=None, prompts=None, samples=3, num
         if not prompts and not error:
             error = "prompt generation returned no usable buyer questions (all were blank or named the company)"
     prompts = list(dict.fromkeys(prompts))
-    answers = ask_buyers(llm, prompts, samples, progress)
+    answers = ask_buyers(llm, prompts, samples, progress, answerer)
     # A branded answer about a namesake says nothing about this company: no recognition, no branded sentiment.
     scores = score(host, answers, company_name, None if namesake else analysis.get("target_sentiment"), profile)
     scores["recognized"] = False if namesake and analysis.get("recognized") else analysis.get("recognized")
     scores["identity"] = branded.get("identity")
     scores["visibility"] = visibility(scores["recognized"], scores["rank"])
+    scores["sources"] = cited(answers, host)
     partial = branded["status"] != "COMPLETE" or (site or {}).get("error") or error or not scores["answers_scored"] or any(a["error"] for a in answers)
     # Scores and identity first: the report digest trims each file from the end, and the raw answers are long.
     return {"status": "PARTIAL" if partial else "COMPLETE", "domain": host, "error": error, "scores": scores,
@@ -297,14 +329,21 @@ def write_bundle(output, result, model):
             "domain_mentioned": result["branded"]["domain_mentioned"]}
 
 
-def collect(client, discovery, pages, brand):
+def collect(client, discovery, pages, brand, search=False):
+    """llm_reputation, or with search=True ai_search: the same flow with answers from a web-search model."""
     # ponytail: defaults mean ~50 API calls per scan; lower num_prompts/samples here if scans get too slow.
     name = None if brand == urlsplit(discovery["origin"]).hostname else brand
     config = getattr(client, "config", None)
+    limitations = SEARCH_LIMITATIONS if search else LIMITATIONS
+    run, earlier = previous(client, "ai_search" if search else "llm_reputation")
+    prompts = [p["text"] for p in (earlier or {}).get("prompts") or [] if isinstance(p, dict) and isinstance(p.get("text"), str)] or None
     try:
         llm = chat_model(REPUTATION_MODEL, timeout=120)
+        answerer = chat_model(SEARCH_MODEL, timeout=180).bind_tools([{"type": "web_search"}]) if search else None
         result = rank_reputation(discovery["origin"], llm, name, progress=getattr(client, "progress", None),
-                                 icp=getattr(config, "icp", None), location=getattr(config, "location", None), pages=pages)
+                                 icp=getattr(config, "icp", None), location=getattr(config, "location", None), pages=pages,
+                                 answerer=answerer, prompts=prompts, source="previous" if prompts else None)
     except Exception as exc:  # Missing key, auth, network and provider errors share no base class.
-        return {"status": "UNKNOWN", "reason": "llm_request_failed", "error": str(exc), "limitations": LIMITATIONS}
-    return {**result, "model": REPUTATION_MODEL, "limitations": LIMITATIONS}
+        return {"status": "UNKNOWN", "reason": "llm_request_failed", "error": str(exc), "limitations": limitations}
+    models = {"model": SEARCH_MODEL, "extraction_model": REPUTATION_MODEL} if search else {"model": REPUTATION_MODEL}
+    return {**result, **models, "questions_from": run if prompts else None, "limitations": limitations}

@@ -73,6 +73,20 @@ class ScannerTests(unittest.TestCase):
             code = main(args)
         return code, json.loads(out.getvalue())
 
+    def test_earlier_runs_for_question_reuse(self):
+        seen = {}
+
+        def probe(client, discovery, pages, brand):
+            seen[len(seen)] = [p.name for p in client.previous_runs]
+            return {"status": "OBSERVED"}
+        from companyscan.dimensions import DIMENSIONS
+        base = ["--json", "--allow-private", "--delay", "0", "--max-pages", "1", "--dimension", "probe"]
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(DIMENSIONS, {"probe": {"label": "Probe", "collect": probe}}):
+            for name, extra in (("a", []), ("b", ["--location", "Guelph"]), ("c", []), ("d", ["--fresh-questions"])):
+                self.command(["scan", self.url, "--output", str(Path(tmp) / name), *base, *extra])
+        # b is asked for another location, so c reuses only a; d asks for fresh questions.
+        self.assertEqual(seen, {0: [], 1: [], 2: ["a"], 3: []})
+
     def test_scan_artifacts_and_evidence(self):
         with tempfile.TemporaryDirectory() as tmp:
             code, result = self.command(["scan", self.url, "--output", tmp, "--json", "--allow-private", "--delay", "0"])
@@ -229,6 +243,24 @@ class ScannerTests(unittest.TestCase):
         self.assertEqual(profiles, [])
         with self.assertRaises(ValueError):
             normalize("https://user:secret@example.com")
+
+    def test_profiles_and_names_skip_case_study_clients(self):
+        from companyscan.scan.artifacts import company_record
+        chrome = [{"url": "https://me.test/newsletter"}, {"url": "https://me.substack.com/"}]
+        client = {"@type": "Article", "about": {"@type": "Organization", "name": "Client Co",
+                                                "sameAs": ["https://www.linkedin.com/company/client"]}}
+        pages = [{"url": "https://me.test/", "depth": 0, "links": [{"url": "https://medium.com/@me"}],
+                  "json_ld": {"documents": [{"@graph": [{"@type": "Person", "name": "Me",
+                                                          "sameAs": ["https://www.linkedin.com/in/me"]}]}]}},
+                 {"url": "https://me.test/work/client", "depth": 1, "json_ld": {"documents": [client]},
+                  "links": chrome + [{"url": "https://www.instagram.com/client"}]},
+                 {"url": "https://me.test/about", "depth": 1, "links": chrome}]
+        self.assertEqual([p["url"] for p in discover_profiles(pages)],
+                         ["https://www.linkedin.com/in/me", "https://medium.com/@me", "https://me.substack.com/"])
+        self.assertEqual([n["value"] for n in company_record(pages, None)["names"]], [])  # Person isn't an org type.
+        self.assertEqual([e["value"]["name"] for e in company_record(
+            [{**pages[1], "json_ld": {"documents": [{"@type": "Organization", "name": "Me Inc"}, client]}}], None)
+            ["structured_entities"]], ["Me Inc"])
 
     def test_batch_continues_past_bad_rows(self):
         with tempfile.TemporaryDirectory() as tmp:

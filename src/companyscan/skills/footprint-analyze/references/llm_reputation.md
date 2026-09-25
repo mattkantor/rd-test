@@ -9,6 +9,7 @@ Source: `technical/llm_reputation.json`:
 - `icp_check` (only when the user supplied an ICP): the model's INFERRED judgment of whether the site sells to that ICP: `aligned`, `partial` or `misaligned`, with `site_icp` and a reason.
 - `branded.identity`: the branded answer's stated facts checked against `profile`. `verdict` is `mismatch` (a fact conflicts: likely a namesake), `confirmed` (an independent fact agrees) or `unconfirmed`. `echoed` facts were in the prompt and prove nothing.
 - `audience`: the ICP and location the buyer questions targeted; `source` is `user` (supplied) or `model` (the model's guess).
+- `questions_from`: the earlier run whose buyer questions were reused (prompt `source: previous`), so this run's answers compare question by question with that one; null when the questions were written fresh.
 
 The model answered without web search. Use the citation shape from [analysis-rubric.md](analysis-rubric.md), and give every finding a `business_impact` per [business-impact.md](business-impact.md). Finding IDs use an `R` prefix.
 

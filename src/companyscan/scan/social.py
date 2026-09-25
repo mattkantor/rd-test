@@ -3,12 +3,14 @@ from urllib.parse import urlsplit
 
 from .crawler import Robots, normalize, origin
 from .extract import extract
-from .schema import objects
+from .schema import entities
 
 NETWORKS = {"linkedin.com": "linkedin", "instagram.com": "instagram", "facebook.com": "facebook",
             "youtube.com": "youtube", "youtu.be": "youtube", "x.com": "x", "twitter.com": "x",
             "tiktok.com": "tiktok", "github.com": "github", "g.page": "google-business",
-            "maps.google.com": "google-business"}
+            "maps.google.com": "google-business", "threads.net": "threads", "bsky.app": "bluesky",
+            "pinterest.com": "pinterest", "medium.com": "medium", "substack.com": "substack",
+            "beehiiv.com": "beehiiv", "ghost.io": "ghost", "hashnode.dev": "hashnode", "dev.to": "dev.to"}
 
 
 def network(url):
@@ -49,7 +51,7 @@ def discover_profiles(pages, known=()):
         source = page["url"]
         for link in page.get("links", []):
             add(link["url"], source, "website-link")
-        for obj in objects(page.get("json_ld", {}).get("documents", [])):
+        for obj in entities(page.get("json_ld", {}).get("documents", [])):
             values = obj.get("sameAs", [])
             for value in values if isinstance(values, list) else [values]:
                 if isinstance(value, str):
@@ -59,7 +61,14 @@ def discover_profiles(pages, known=()):
                 add(value, source, "OpenGraph")
     for url in known:
         add(url, "CLI --known-profile", "user-supplied")
-    return sorted(found.values(), key=lambda p: (p["network"], p["url"]))
+    # A plain link only counts when it's the owner's: on the start page or in site-wide chrome. A case study linking a
+    # client's LinkedIn from one page is about someone else.
+    # ponytail: a third of pages approximates header/footer; parse <nav>/<footer> if owners hide profiles deeper.
+    home = {p["url"] for p in pages if p.get("depth") == 0}
+    chrome = max(2, len(pages) / 3)
+    return sorted((p for p in found.values()
+                   if any(e["method"] != "website-link" or e["source"] in home for e in p["evidence"])
+                   or len(p["evidence"]) >= chrome), key=lambda p: (p["network"], p["url"]))
 
 
 def collect_profiles(client, profiles):

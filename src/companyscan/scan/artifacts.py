@@ -3,9 +3,10 @@ import hashlib
 import json
 from dataclasses import asdict
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from ..models import SCHEMA_VERSION, evidence, now
-from .schema import objects
+from . import schema
 from .accessibility import render_report
 
 
@@ -14,12 +15,29 @@ def write_json(path, value):
     path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def previous_runs(parent, host, before=None):
+    """Earlier crawl bundles in `parent` for `host` (www. ignored), newest first, as (path, manifest). `before` is an ISO
+    created_at: only runs made before it. Reputation-only runs are left out."""
+    runs = []
+    for path in Path(parent).glob("*/manifest.json"):
+        try:
+            m = json.loads(path.read_text(encoding="utf-8"))
+            h = urlsplit(str(m.get("input_url"))).hostname
+        except (OSError, ValueError, AttributeError):
+            continue
+        created = str(m.get("created_at") or "")
+        if m.get("command") != "reputation" and h and h.removeprefix("www.") == str(host).removeprefix("www.") \
+                and (before is None or created < before):
+            runs.append((created, path.parent, m))
+    return [(run, m) for _, run, m in sorted(runs, key=lambda r: r[0], reverse=True)]
+
+
 def company_record(pages, name):
     names, entities = [], []
     if name:
         names.append(evidence(name, "EXTRACTED", "CLI --company-name", note="User supplied; not independently verified"))
     for page in pages:
-        for obj in objects(page.get("json_ld", {}).get("documents", [])):
+        for obj in schema.entities(page.get("json_ld", {}).get("documents", [])):
             types = obj.get("@type", [])
             types = types if isinstance(types, list) else [types]
             if any(t in {"Organization", "Corporation", "LocalBusiness", "Dentist", "ProfessionalService", "MedicalBusiness", "Store"} for t in types):

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from companyscan.web.dashboard import MISSING, UNREADABLE, describe, link, load, read, table
+from companyscan.web.dashboard import MISSING, UNREADABLE, describe, link, load, read, since_last, table
 
 SCORED = {
     "status": "COMPLETE", "domain": "acme.test", "error": None,
@@ -89,6 +89,49 @@ def full_bundle(root, name="acme", reputation=SCORED):
     write(d, "analysis/report.md", "# Acme report")
     write(d, "analysis/analysis.json", {"findings": [{"id": "F1", "severity": "WARNING", "title": "Thin proof"}]})
     return d
+
+
+def search_run(rank, mentions, sources):
+    """An ai_search result: one question asked twice, the target named in `mentions` of the answers."""
+    answers = [{"prompt": "best kids dentist?", "sample": i, "error": None,
+                "companies": [{"name": "Acme Dental", "website": "acme.test", "position": 1}] if i < mentions else [{"name": "Beta", "position": 1}]}
+               for i in range(2)]
+    return {"status": "COMPLETE", "domain": "acme.test", "profile": {}, "prompts": [{"text": "best kids dentist?"}], "answers": answers,
+            "scores": {"rank": rank, "mention_rate": mentions / 2, "share_of_voice": 0.5, "sentiment": {"score": 10},
+                       "leaderboard": [{"company": "Beta", "is_target": False}], "sources": sources}}
+
+
+class SinceLastRunTest(unittest.TestCase):
+    def test_compares_each_check_with_the_newest_earlier_run_that_has_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            def run(name, created, **files):
+                write(root / name, "manifest.json", {"input_url": "https://www.acme.test/", "created_at": created, "command": "scan"})
+                for dim, data in files.items():
+                    write(root / name, f"technical/{dim}.json", data)
+            run("jan", "2026-01-01T00:00:00+00:00", ai_search=search_run(None, 0, [{"domain": "yelp.test", "answers": 2}]),
+                answer_coverage={"summary": {"answered": 1, "partial": 1, "missing": 1},
+                                 "questions": [{"question": "Cost?", "coverage": "missing"}, {"question": "Hours?", "coverage": "answered"}]})
+            run("feb", "2026-02-01T00:00:00+00:00", ai_search={"status": "UNKNOWN"})  # Skipped: nothing to compare against.
+            run("mar", "2026-03-01T00:00:00+00:00", ai_search=search_run(2, 1, [{"domain": "acme.test", "answers": 1, "is_target": True},
+                                                                                 {"domain": "news.test", "answers": 1}]),
+                answer_coverage={"summary": {"answered": 2, "partial": 1, "missing": 0},
+                                 "questions": [{"question": "Cost?", "coverage": "partial"}, {"question": "Hours?", "coverage": "answered"}]})
+            run("apr", "2026-04-01T00:00:00+00:00")  # Later runs aren't the baseline.
+            manifest = json.loads((root / "mar/manifest.json").read_text())
+            since = {c["label"]: c for c in since_last(root / "mar", manifest, "acme.test")}
+        search = since["AI search"]
+        self.assertEqual(search["run"], "jan")
+        rows = {r["label"]: (r["before"], r["after"], r["trend"]) for r in search["metrics"]}
+        self.assertEqual(rows["Rank"], ("—", "#2", None))
+        self.assertEqual(rows["Mention rate"], ("0%", "50%", "better"))
+        self.assertEqual(rows["Answers citing your site"], ("0", "1", "better"))
+        self.assertEqual([(q["before"], q["after"]) for q in search["questions"]], [("0%", "50%")])
+        self.assertIn("Top cited sites: new: news.test; gone: yelp.test", search["details"])
+        cover = since["Answer coverage"]
+        self.assertEqual({r["label"]: r["trend"] for r in cover["metrics"]}, {"Answered": "better", "Partly answered": "same", "Not answered": "better"})
+        self.assertEqual([(q["text"], q["trend"]) for q in cover["questions"]], [("Cost?", "better")])
+        self.assertNotIn("AI reputation", since)
 
 
 class HelperTest(unittest.TestCase):
@@ -367,6 +410,87 @@ class DashboardPageTest(WebCase):  # Skipped outside python manage.py test.
         self.assertIn("<em>Not found on the page:</em>", page)
         self.assertIn("&lt;script&gt;x&lt;/script&gt;", page)
         self.assertNotIn("<script>x</script>", page)
+
+    def test_renders_ai_search_sources_safely(self):
+        d = full_bundle(self.root)
+        sources = [{"domain": "yelp.test", "citations": 3, "answers": 2, "is_target": False},
+                   {"domain": "acme.test", "citations": 1, "answers": 1, "is_target": True}]
+        answer = {**SCORED["answers"][0], "sources": [{"url": "javascript:alert(1)", "title": "<script>y</script>"},
+                                                      {"url": "https://yelp.test/acme", "title": "Acme on Yelp"}]}
+        write(d, "technical/ai_search.json", {**SCORED, "answers": [answer], "scores": {**SCORED["scores"], "sources": sources}})
+        page = self.client.get("/run/acme").text
+        self.assertIn('<a href="#ai_search">AI search</a>', page)
+        self.assertIn('<section id="ai_search"', page)
+        self.assertIn("2. acme.test (you)", page)
+        self.assertIn('href="https://yelp.test/acme"', page)
+        self.assertNotIn('href="javascript:', page)
+        self.assertIn("&lt;script&gt;y&lt;/script&gt;", page)
+
+    def test_renders_answer_coverage_safely(self):
+        d = full_bundle(self.root)
+        questions = [{"question": "<script>q</script>?", "intent": "cost", "coverage": "answered", "best_url": "https://acme.test/p",
+                      "quote": "$100", "verified": True, "gap": None, "error": None},
+                     {"question": "Open Saturday?", "intent": "availability", "coverage": "missing", "best_url": None, "gap": "No hours page."}]
+        write(d, "technical/answer_coverage.json", {"status": "COMPLETE", "questions": questions,
+                                                     "summary": {"answered": 1, "partial": 0, "missing": 1, "questions": 2}})
+        page = self.client.get("/run/acme").text
+        self.assertIn('<a href="#answers">Answers</a>', page)
+        self.assertIn("1 answered · 0 partly · 1 not answered, of 2 buyer questions", page)
+        self.assertIn("&lt;script&gt;q&lt;/script&gt;", page)
+        self.assertNotIn("<script>q</script>", page)
+        self.assertLess(page.index("Open Saturday?"), page.index("&lt;script&gt;q"))  # Gaps first.
+        self.assertIn("1 buyer question not answered by any page", page)
+
+    def test_renders_practitioners_safely(self):
+        d = full_bundle(self.root)
+        people = [{"name": "<script>p</script>", "role": "Dentist", "credentials": ["DDS"], "profile_url": "https://acme.test/team",
+                   "checks": {"credentials": True}, "evidence": [{"url": "https://acme.test/team", "quote": "DDS", "verified": True}]},
+                  {"name": "Dr. Full", "checks": {k: True for k in ("dedicated_page", "credentials", "education", "person_schema")},
+                   "person_schema": {"same_as": ["javascript:alert(1)"]}}]
+        write(d, "technical/practitioners.json", {"status": "COMPLETE", "practitioners": people,
+                                                  "summary": {"practitioners": 2, "with_dedicated_page": 0, "with_person_schema": 0},
+                                                  "schema_people_unmatched": [{"name": "Acme Admin", "pages": ["a", "b"]}]})
+        page = self.client.get("/run/acme").text
+        self.assertIn('<a href="#people">People</a>', page)
+        self.assertIn("2 practitioners · 0 with their own page · 0 with Person schema", page)
+        self.assertIn("&lt;script&gt;p&lt;/script&gt;", page)
+        self.assertNotIn("<script>p</script>", page)
+        self.assertNotIn('href="javascript:', page)
+        self.assertLess(page.index("&lt;script&gt;p"), page.index("Dr. Full"))  # Thinnest profile first.
+        self.assertIn("<strong>Acme Admin</strong> (2 pages)", page)
+        self.assertIn("None of the 2 practitioners has their own profile page", page)
+
+    def test_renders_google_listing_safely(self):
+        d = full_bundle(self.root)
+        checks = [{"field": "phone", "google": "(519) 555-0100", "site": "4165559999", "agrees": False},
+                  {"field": "postal_code", "google": "N1H 1G5", "site": None, "agrees": True}]
+        write(d, "technical/google_business.json", {"status": "OBSERVED", "found": True, "matched_by": "website", "query": "Acme",
+                                                    "mismatches": ["phone"], "checks": checks,
+                                                    "listing": {"name": "Acme", "maps": "javascript:alert(1)"},
+                                                    "reviews": {"rating": 4.8, "count": 212, "sample": 1, "sample_detailed": 0,
+                                                                "reviews": [{"rating": 5, "text": "<script>r</script>", "words": 1}]}})
+        page = self.client.get("/run/acme").text
+        self.assertIn('<a href="#listing">Google</a>', page)
+        self.assertIn("Acme · 4.8★ from 212 reviews", page)
+        self.assertIn("Differs", page)
+        self.assertIn("found on the site", page)
+        self.assertIn("&lt;script&gt;r&lt;/script&gt;", page)
+        self.assertNotIn("<script>r</script>", page)
+        self.assertNotIn('href="javascript:', page)
+        self.assertIn("Google listing phone differs from the website", page)
+
+    def test_renders_since_last_run(self):
+        d = full_bundle(self.root)
+        write(d, "technical/answer_coverage.json", {"status": "COMPLETE", "summary": {"answered": 2, "missing": 0},
+                                                     "questions": [{"question": "<b>Cost?</b>", "coverage": "answered"}]})
+        write(self.root / "older", "manifest.json", {"input_url": "https://acme.test/", "created_at": "2026-01-01T00:00:00+00:00", "command": "scan"})
+        write(self.root / "older", "technical/answer_coverage.json", {"status": "COMPLETE", "summary": {"answered": 1, "missing": 1},
+                                                                     "questions": [{"question": "<b>Cost?</b>", "coverage": "missing"}]})
+        page = self.client.get("/run/acme").text
+        self.assertIn("<summary>Since last run</summary>", page)
+        self.assertIn("(older)", page)
+        self.assertIn("&lt;b&gt;Cost?&lt;/b&gt;", page)
+        self.assertNotIn("<b>Cost?</b>", page)
 
     def test_renders_every_section_safely(self):
         full_bundle(self.root)

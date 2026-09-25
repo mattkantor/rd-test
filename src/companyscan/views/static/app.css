@@ -146,6 +146,7 @@ pre { background: #f5f6f8; padding: 10px; border-radius: 8px; white-space: pre-w
 .big { font-size: 28px; font-weight: 700; margin: 8px 0; }
 a.raw { font-size: 13px; }
 .answer { margin: 8px 0; }
+.sources { margin: 4px 0 0; padding-left: 18px; font-size: 13px; overflow-wrap: anywhere; }
 .st { font-weight: 600; }
 .st-pass, .st-complete, .st-observed { color: #1d7a46; }
 .st-warning, .st-partial { color: #a45f00; }

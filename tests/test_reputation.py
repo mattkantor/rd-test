@@ -94,6 +94,21 @@ MENTIONS = {ANSWER_A: [{"name": "Acme Dental", "website": None, "position": 1, "
 
 
 class ReputationTest(unittest.TestCase):
+    def test_citations_from_search_annotations(self):
+        blocks = [{"type": "reasoning"}, {"type": "text", "text": "See Acme.", "annotations": [
+            {"type": "url_citation", "url": "https://a.test/?utm_source=openai", "title": "A"},
+            {"type": "citation", "url": "https://a.test/?utm_source=openai"}, {"type": "file_citation"}, "junk"]}]
+        self.assertEqual(reputation.citations(SimpleNamespace(content=blocks)), [{"url": "https://a.test/?utm_source=openai", "title": "A"}])
+        self.assertEqual(reputation.citations(SimpleNamespace(content="plain text")), [])
+        self.assertEqual(reputation.text(SimpleNamespace(content=blocks)), "See Acme.")
+
+    def test_cited_ranks_domains_by_answers(self):
+        answers = [{"sources": [{"url": "https://www.yelp.test/a"}, {"url": "https://acme.test/"}]},
+                   {"sources": [{"url": "https://yelp.test/b"}, {"url": "https://yelp.test/c"}]}, {"error": "x"}]
+        self.assertEqual(reputation.cited(answers, "acme.test"),
+                         [{"domain": "yelp.test", "citations": 3, "answers": 2, "is_target": False},
+                          {"domain": "acme.test", "citations": 1, "answers": 1, "is_target": True}])
+
     def test_records_raw_answer_and_analysis(self):
         answer = "Acme Dental (acme.test) serves Toronto families. Competitors: Beta Dental."
         llm = StubLLM(answer, ANALYSIS)
