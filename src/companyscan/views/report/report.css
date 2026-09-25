@@ -118,3 +118,71 @@ tbody tr:nth-child(even) td { background: #fafbfc; }
 .v-PASS, .v-LOW { background: var(--pass); }
 .v-WARNING, .v-MEDIUM { background: var(--warn); }
 .v-FAIL, .v-HIGH { background: var(--fail); }
+.v-UNKNOWN, .v-INFO { background: var(--unknown); }
+
+/* Designed layout (report.pdf designed()): built from analysis.json, report.md follows as the appendix. */
+.designed h2 { break-before: auto; margin-top: 9mm; }
+.designed section.page { break-before: page; }
+.designed section.page > h2:first-child { margin-top: 0; }
+.designed .appendix h2 { break-before: auto; }
+.designed .fid { font: 600 8pt "SF Mono", Menlo, monospace; color: var(--muted); }
+
+.cover {
+  margin: 0 0 6mm;
+  padding: 42mm 12mm 10mm;
+  color: #fff;
+  background: var(--ink);
+  border-bottom: 3mm solid var(--accent);
+}
+.cover .eyebrow { font-size: 9pt; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #9fb2ff; }
+.cover-title { string-set: doc-title content(); margin: 3mm 0 2mm; font-size: 34pt; font-weight: 700; line-height: 1.05; letter-spacing: -0.02em; overflow-wrap: anywhere; }
+.cover .meta { margin: 0 0 10mm; font-size: 9.5pt; color: #b9bec8; }
+.tally { display: flex; gap: 3mm; }
+.count { flex: 1; padding: 3mm 4mm; border-radius: 2mm; background: rgba(255, 255, 255, 0.08); border-top: 1.2mm solid var(--unknown); font-size: 8.5pt; color: #c9cdd4; }
+.count b { display: block; font-size: 22pt; line-height: 1.1; color: #fff; }
+
+/* Severity accent shared by tiles, counts and cards. */
+.s-PASS, .s-LOW { --sev: var(--pass); }
+.s-WARNING, .s-MEDIUM { --sev: var(--warn); }
+.s-FAIL, .s-HIGH { --sev: var(--fail); }
+.s-UNKNOWN, .s-INFO { --sev: var(--unknown); }
+.count { border-top-color: var(--sev); }
+
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm; }
+.tile { padding: 3mm 3.5mm; border: 1px solid var(--rule); border-top: 1.2mm solid var(--sev); border-radius: 1.5mm; break-inside: avoid; }
+.tile-label { display: block; margin-bottom: 1mm; font-size: 8pt; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.tile p { margin: 1.5mm 0 0; font-size: 8.5pt; line-height: 1.4; color: #333a45; }
+
+.impacts { padding: 0; list-style: none; counter-reset: impact; }
+.impacts li { display: grid; grid-template-columns: 18mm 1fr auto; gap: 3mm; align-items: baseline; padding: 2.5mm 0; border-bottom: 1px solid var(--rule); break-inside: avoid; }
+.impacts li span:not(.v) { display: block; font-size: 9pt; color: var(--muted); }
+.impacts em { font-size: 8pt; font-style: normal; text-transform: uppercase; letter-spacing: 0.06em; }
+.matrix td:first-child { font-weight: 650; }
+
+.card { margin: 0 0 4mm; padding: 3.5mm 4.5mm; border: 1px solid var(--rule); border-left: 1.5mm solid var(--sev); border-radius: 1.5mm; break-inside: avoid; }
+.card header { display: flex; gap: 2.5mm; align-items: baseline; }
+.card h3 { margin: 0; font-size: 11.5pt; color: var(--ink); }
+.card .impact { margin: 1.5mm 0 2mm; font-weight: 600; color: var(--sev); }
+.card dl { display: grid; grid-template-columns: 26mm 1fr; gap: 1mm 3mm; margin: 0; font-size: 9.5pt; }
+.card dt { font-size: 8pt; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); padding-top: 0.6mm; }
+.card dd { margin: 0; }
+.card footer { margin-top: 2.5mm; padding-top: 2mm; border-top: 1px dashed var(--rule); font-size: 8pt; color: var(--muted); }
+.card .ev { margin: 1mm 0 0; padding: 0; list-style: none; }
+.card .ev li { margin: 0.5mm 0; }
+
+.working { padding: 0; list-style: none; columns: 2; column-gap: 8mm; }
+.working li { display: flex; gap: 2mm; align-items: baseline; break-inside: avoid; }
+.recs td:first-child { width: 20mm; }
+.recs td.fid { width: 18mm; }
+
+.rep { padding: 4mm 5mm; background: var(--wash); border-radius: 2mm; }
+.rank { margin: 0 0 3mm; font-size: 10pt; }
+.rank b { font-size: 20pt; }
+.bar { display: grid; grid-template-columns: 30mm 1fr 14mm; gap: 3mm; align-items: center; margin: 1.5mm 0; font-size: 9pt; }
+.track { height: 3mm; background: #e3e6eb; border-radius: 2mm; overflow: hidden; }
+.track i { display: block; height: 100%; background: var(--accent); }
+.bar b { text-align: right; }
+.chips { display: flex; flex-wrap: wrap; gap: 1.5mm; }
+.chips span { padding: 0.5mm 2.5mm; border: 1px solid var(--rule); border-radius: 3mm; font-size: 8.5pt; }
+.limits { columns: 2; column-gap: 8mm; font-size: 8pt; color: var(--muted); }
+.limits li { break-inside: avoid; }

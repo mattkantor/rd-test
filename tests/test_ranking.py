@@ -25,6 +25,14 @@ class KeyTest(unittest.TestCase):
         self.assertFalse(is_target("acmedental.com", "Acme Dental", "acme.test", "Acme Dental"))
 
 
+    def test_profile_names_count_and_namesakes_in_other_cities_do_not(self):
+        profile = {"names": ["Acme Dental Group"], "cities": ["Austin"]}
+        self.assertTrue(is_target("acme dental group", "Acme Dental Group", "acme.test", None, profile))
+        self.assertTrue(is_target("acme", "Acme", "acme.test", None, profile, "Austin, TX"))
+        self.assertTrue(is_target("acme", "Acme", "acme.test", None, profile, None))  # No city stated: still a match.
+        self.assertFalse(is_target("acme", "Acme", "acme.test", None, profile, "Denver"))
+
+
 class ScoreTest(unittest.TestCase):
     def test_leaderboard_rank_rates_and_sentiment(self):
         answers = [

@@ -24,6 +24,15 @@ you're losing money and leaving money on the table. Our certified team has 20 ye
 We built our platform, our process and our people to be the best. We are featured in Forbes and as seen on TV.
 Stop losing deals. Our revolutionary method is unmatched and second to none. We are the only agency you need."""
 
+# Newer-model copy: no stock vocabulary, but split contrasts, "No X, no Y. Just Z." and no concrete numbers.
+MODERN = """Most sales teams don't have a lead problem. They have a follow-up problem.
+We looked at how our customers spend their first ninety days and found the same pattern again and again. Reps work hard
+on the first touch, then lose track of the prospect once the conversation stalls. Deals don't die because of price. They die because nobody writes back.
+That's why we built Relay around the second message. It watches every open thread, notices when a prospect goes quiet,
+and drafts a reply that picks up where the conversation left off. You review it, change what you want, and send it.
+The result is simple. Fewer deals slip through the cracks, and your team spends its time on conversations that are
+actually moving. No new process to learn, no dashboard to babysit. Just better follow-up, every single day."""
+
 BALANCED = """You probably don't need an agency. If your list is under 500 contacts, you'll get more from writing to them yourself,
 and you should. Here is how you can tell. Your reply rate on the last campaign tells you whether the list or the
 message is the problem. You can test that in a week. This isn't for everyone: if you sell to fewer than 50 accounts,
@@ -51,6 +60,15 @@ class CopyScoresTests(unittest.TestCase):
         self.assertTrue(any("unlock" in e.lower() for e in stock["examples"]))
         self.assertEqual(slop["signals"]["contrast_frames"]["count"], 1)
         self.assertGreater(plain["signals"]["specificity"]["subscore"], 0)
+
+    def test_modern_structural_tells_without_stock_words(self):
+        modern, plain = score_text(MODERN)["ai_slop"], score_text(PLAIN)["ai_slop"]
+        self.assertEqual(modern["signals"]["stock_phrases"]["count"], 0)
+        self.assertEqual(modern["signals"]["contrast_frames"]["count"], 2)
+        self.assertEqual(modern["signals"]["formula_openers"]["count"], 3)
+        self.assertEqual(modern["signals"]["vagueness"]["subscore"], 100)
+        self.assertEqual(modern["level"], "MEDIUM")
+        self.assertLess(plain["signals"]["vagueness"]["subscore"], 50)
 
     def test_uniform_rhythm_scores_higher_than_varied(self):
         uniform = " ".join(["The team shipped the new pricing page this week."] * 12)

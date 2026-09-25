@@ -1,0 +1,20 @@
+{#- The job status panel: included by dashboard.html and served alone by /run/<name>/job for polling. -#}
+  {%- set kinds = {"crawl": "Crawl", "recrawl": "Re-crawl", "report": "Report"} %}
+  {%- set running = job and job.state == "running" %}
+  {% if job %}
+  <section class="job job-{{ job.state }}">
+    {% if running %}
+      <h3>{{ kinds.get(job.kind, "Job") }} running · {% if job.steps %}step {{ job.step }} of {{ job.steps }}{% else %}starting…{% endif %}</h3>
+      <div class="bar"><div style="width: {{ percent }}%"></div></div>
+      <p>{{ job.label }}</p>
+      <small>Started {{ job.started | local_time }} · {{ percent }}% · updating every 3 seconds</small>
+    {% elif job.state == "done" %}
+      <p>✔ {{ kinds.get(job.kind, "Job") }} finished: {{ job.label }}
+        {% if job.kind in ("crawl", "recrawl") and job.run and job.run != bundle.name %}
+          → <a href="/run/{{ job.run | urlencode }}">View new run</a>{% if site %} · <a href="/site/{{ site.pk }}">site page</a>{% endif %}{% endif %}</p>
+      {% if job.finished %}<small>Finished {{ job.finished | local_time }}</small>{% endif %}
+    {% else %}
+      <p class="st st-error">{{ kinds.get(job.kind, "Job") }} failed: {{ job.label }}</p>
+    {% endif %}
+  </section>
+  {% endif %}

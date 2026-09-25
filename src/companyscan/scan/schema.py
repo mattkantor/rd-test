@@ -13,6 +13,20 @@ def objects(value):
             yield from objects(child)
 
 
+def entities(value):
+    """Top-level JSON-LD nodes (each document, or its @graph members): what the site says about itself. Nested nodes
+    describe other parties, e.g. a case study's `about` client, so they never count as the site's own name or profiles.
+    ponytail: also drops a Person nested as an Organization's founder; allowlist relations if a site needs that."""
+    if isinstance(value, list):
+        for child in value:
+            yield from entities(child)
+    elif isinstance(value, dict):
+        if "@type" in value:
+            yield value
+        if "@graph" in value:
+            yield from entities(value["@graph"])
+
+
 def parse_jsonld(blocks: list[str]) -> dict:
     documents, errors = [], []
     for index, block in enumerate(blocks):

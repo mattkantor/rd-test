@@ -38,7 +38,7 @@ Show the per-page ICP in a table. Separate explicit statements from inferences.
 
 ## 3. Human voice
 
-**Start from the scanner's scores.** Each page JSON has `copy_scores.ai_slop` (0–100; LOW <30, MEDIUM 30–59, HIGH 60+, UNKNOWN under 80 words), and `technical/copy-scores.json` has the site summary, `top_pages` and `skeleton_openings`. These are deterministic heuristics (phrase lists, sentence-length spread, openings shared across pages, placeholder text), not judgments.
+**Start from the scanner's scores.** Each page JSON has `copy_scores.ai_slop` (0–100; LOW <30, MEDIUM 30–59, HIGH 60+, UNKNOWN under 80 words), and `technical/copy-scores.json` has the site summary, `top_pages` and `skeleton_openings`. These are deterministic heuristics (phrase lists, structural patterns, sentence-length spread, openings shared across pages, lack of concrete numbers, placeholder text), not judgments.
 - Read the 5 highest-scoring pages in full, plus every HIGH core page. For each flagged signal, **confirm or reject** it with a quote. A shared case-study template, a legitimate em dash habit, or a "Key takeaways" widget is not slop, even when the scanner counts it.
 - Report a per-page table: URL, AI slop score and level, top signals, confirmed/rejected.
 - Copy each score's `level` exactly as recorded in the page JSON; never relabel it. The bands are fixed: 37 is MEDIUM, not LOW.
@@ -47,7 +47,7 @@ Show the per-page ICP in a table. Separate explicit statements from inferences.
 Check whether the copy reads like a person wrote it for a specific reader. These are heuristic signals only. Never state that text *is* AI-generated unless the site says so (an AI-drafting disclosure is an observation). Count per 1,000 words and quote examples:
 
 - Stock AI vocabulary: delve, leverage, seamless, robust, elevate, unlock, empower, streamline, landscape, game-changer, cutting-edge, "in today's fast-paced", "navigate the complexities", "it's important to note", "whether you're … or …".
-- Structural tells: "not just X, but Y" / "it's not X, it's Y" contrasts; reflexive groups of three; em-dash density; every section ending in a summary line; headline formulas repeated across posts; "The short answer" / "The honest answer" / "Here's the thing" openers; generic FAQ padding.
+- Structural tells: "not just X, but Y" / "it's not X, it's Y" contrasts, including split over two sentences ("They don't have a lead problem. They have a follow-up problem."); "No X, no Y. Just Z." closers; "The result is simple." / "Here's why" lead-ins; reflexive groups of three; em-dash density; every section ending in a summary line; headline formulas repeated across posts; "The short answer" / "The honest answer" / "Here's the thing" openers; generic FAQ padding.
 - Sameness: uniform sentence length (report the mean and standard deviation of sentence length in words), identical post skeletons, unfilled template tokens ("in Your Area").
 - Specificity, the counter-signal: named places, numbers with context, first-hand detail, a distinct opinion. These make copy read as human.
 

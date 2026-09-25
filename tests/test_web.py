@@ -16,6 +16,7 @@ if DJANGO:
     from django.db import IntegrityError, transaction
     from django.test import TestCase, override_settings
     from huey.contrib.djhuey import HUEY
+    from companyscan.cli import parser
     from companyscan.dimensions import DIMENSIONS
     from companyscan.web import tasks
     from companyscan.web.models import Job, Run, Site, sync
@@ -115,6 +116,12 @@ class WebTests(WebCase):
         Job.objects.update(state="done")
         Job.objects.create(site=site, kind="report", run="b")  # Finished jobs don't block.
 
+    def test_site_details_become_scan_flags(self):
+        site = Site(origin="https://joes.test", business_name="Joe's", icp="-takeout families", city="Austin", state="TX")
+        args = parser().parse_args(["scan", site.origin, *site.scan_args()])
+        self.assertEqual((args.company_name, args.icp, args.location), ("Joe's", "-takeout families", "Austin, TX"))
+        self.assertEqual(Site(origin="https://x.test").scan_args(), [])
+
     def test_report_job_runs_analysis_then_pdf(self):
         d = bundle(self.root, "acme", "https://acme.test/", "2026-01-01T00:00:00+00:00")
         calls = []
@@ -179,6 +186,43 @@ class WebTests(WebCase):
             self.assertIn("already+has+a+job", response["location"])
         run.assert_not_called()
 
+    def test_site_page_shows_latest_run_and_history(self):
+        bundle(self.root, "acme-old", "https://acme.test/", "2026-01-01T00:00:00+00:00")
+        bundle(self.root, "acme-new", "https://acme.test/", "2026-02-01T00:00:00+00:00")
+        home = self.client.get("/")
+        pk = Site.objects.get(origin="https://acme.test").pk
+        self.assertContains(home, f'href="/site/{pk}"')
+        page = self.client.get(f"/site/{pk}")
+        self.assertContains(page, 'name="dir" value="acme-new"')
+        self.assertContains(page, "History · 2 assessments")
+        self.assertContains(page, 'href="/run/acme-old"')
+        self.assertContains(page, 'name="return_to" value="site"')
+        old = self.client.get("/run/acme-old")
+        self.assertContains(old, "older assessment")
+        self.assertContains(old, f'href="/site/{pk}">Current assessment')
+        with patch.object(tasks, "analyze", lambda b: None), patch.object(tasks, "render_pdf", lambda b: None):
+            self.assertEqual(self.client.post("/report", {"dir": "acme-old", "return_to": "site"})["location"], f"/site/{pk}")
+        self.assertEqual(self.client.get("/site/999").status_code, 404)
+
+    def test_edit_site_profile_but_not_its_url(self):
+        bundle(self.root, "acme", "https://acme.test/", "2026-01-01T00:00:00+00:00")
+        self.client.get("/")
+        site = Site.objects.get()
+        self.assertContains(self.client.get(f"/site/{site.pk}"), f'href="/site/{site.pk}/edit">Edit profile')
+        page = self.client.get(f"/site/{site.pk}/edit")
+        self.assertContains(page, 'value="https://acme.test" disabled')
+        self.assertNotContains(page, 'name="origin"')
+        response = self.client.post(f"/site/{site.pk}/edit", {"origin": "https://evil.test", "business_name": "Acme Dental",
+                                                               "icp": "families", "city": "Austin", "state": "TX", "country": ""})
+        self.assertEqual(response["location"], f"/site/{site.pk}")
+        site.refresh_from_db()
+        self.assertEqual((site.origin, site.business_name, site.location), ("https://acme.test", "Acme Dental", "Austin, TX"))
+        self.assertContains(self.client.get(f"/site/{site.pk}"), "<strong>Acme Dental</strong>")
+        self.assertEqual(self.client.get("/site/999/edit").status_code, 404)
+        self.client.force_login(User.objects.create_superuser("admin"))
+        self.assertNotContains(self.client.get(f"/admin/web/site/{site.pk}/change/"), 'name="origin"')
+        self.assertContains(self.client.get("/admin/web/site/add/"), 'name="origin"')
+
     def test_recrawl_buttons_on_home_and_dashboard(self):
         bundle(self.root, "acme", "https://acme.test/", "2026-01-01T00:00:00+00:00")
         for path in ("/", "/run/acme"):
@@ -199,20 +243,46 @@ class WebTests(WebCase):
     def test_dashboard_shows_job_status(self):
         bundle(self.root, "acme", "https://acme.test/", "2026-01-01T00:00:00+00:00")
         self.assertNotContains(self.client.get("/run/acme"), 'class="job')
-        job = Job.objects.create(site=Site.objects.create(origin="https://acme.test"), kind="recrawl", run="acme-new",
+        job = Job.objects.create(site=Site.objects.get_or_create(origin="https://acme.test")[0], kind="recrawl", run="acme-new",
                                  label="Re-crawling with every check…")
         self.assertContains(self.client.get("/run/acme"), "starting…")
         Job.objects.filter(pk=job.pk).update(step=2, steps=4, done=25, total=50, label="Crawling pages: 25 of 50 pages")
         page = self.client.get("/run/acme")
-        for text in ('http-equiv="refresh"', "Re-crawl running · step 2 of 4", "width: 37%", "Crawling pages: 25 of 50 pages",
-                     "<button disabled>Re-crawl + report"):
+        for text in ('data-poll="/run/acme/job"', "Re-crawl running · step 2 of 4", "width: 37%", "Crawling pages: 25 of 50 pages",
+                     "<button data-busy disabled>Re-crawl + report"):
             self.assertContains(page, text)
+        self.assertNotContains(page, 'http-equiv="refresh"')  # Only the panel is polled, not the page.
+        panel = self.client.get("/run/acme/job")  # What the dashboard polls: the panel alone.
+        self.assertContains(panel, "width: 37%")
+        self.assertContains(panel, "job-running")
+        self.assertNotContains(panel, "<html")
+        self.assertEqual(self.client.get("/run/nope/job").status_code, 404)
         Job.objects.filter(pk=job.pk).update(state="done", label="Crawled 50 pages (PARTIAL)")
+        self.assertNotContains(self.client.get("/run/acme/job"), "job-running")
         page = self.client.get("/run/acme")
-        self.assertNotContains(page, 'http-equiv="refresh"')
         self.assertContains(page, 'href="/run/acme-new">View new run')
         Job.objects.filter(pk=job.pk).update(state="error", label="disk full")
         self.assertContains(self.client.get("/run/acme"), "Re-crawl failed: disk full")
+
+    def test_home_polls_a_small_status_per_running_job(self):
+        bundle(self.root, "acme", "https://acme.test/", "2026-01-01T00:00:00+00:00")
+        self.client.get("/")
+        acme = Site.objects.get()
+        new = Site.objects.create(origin="https://new.test")  # First crawl: no run, so no table row yet.
+        Job.objects.create(site=acme, kind="recrawl", run="acme-2", step=2, steps=4, label="Crawling pages")
+        Job.objects.create(site=new, kind="crawl", run="new-1", label="Crawling…")
+        page = self.client.get("/")
+        self.assertNotContains(page, 'http-equiv="refresh"')
+        for text in (f'data-poll="/site/{acme.pk}/job"', f'data-poll="/site/{new.pk}/job"', 'class="pending"',
+                     "<button data-busy disabled>Re-crawl + report", "/static/poll.js", "width: 25%"):
+            self.assertContains(page, text)
+        mini = self.client.get(f"/site/{acme.pk}/job")
+        self.assertContains(mini, "job-running")
+        self.assertContains(mini, "Crawling pages · 25%")
+        self.assertNotContains(mini, "<html")
+        Job.objects.filter(site=acme).update(state="done", label="Crawled 3 pages (COMPLETE)")
+        self.assertNotContains(self.client.get(f"/site/{acme.pk}/job"), "job-running")
+        self.assertEqual(self.client.get("/site/999/job").status_code, 404)
 
     def test_dashboard_buttons_return_to_the_dashboard(self):
         bundle(self.root, "acme", "https://acme.test/", "2026-01-01T00:00:00+00:00")

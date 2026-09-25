@@ -99,7 +99,18 @@ form + form { margin-top: 6px; }
 .detail-list { margin: 0 0 8px; padding-left: 18px; font-size: 13px; color: var(--ink-2); }
 .detail-list li { overflow-wrap: anywhere; }
 .files { font-size: 13px; }
-details.panel > summary small { display: inline; margin-left: 8px; font-size: 13px; font-weight: 400; }
+/* Tabs: pure CSS via :target, so tile, anomaly and ?sort=…#pages links open their tab. Overview shows when nothing is targeted. */
+.tabs { position: sticky; top: 0; z-index: 1; display: flex; gap: 4px; overflow-x: auto; margin: 16px 0 0; padding: 8px 0 0; background: #f5f6f8; border-bottom: 1px solid var(--hairline); }
+.tabs a { padding: 8px 12px; border-bottom: 3px solid transparent; color: var(--ink-2); font-size: 14px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.tabs a:hover { color: var(--ink); }
+.tab { display: none; scroll-margin-top: 56px; padding-top: 4px; }
+.tab:target, .tab:has(:target), .dash:not(:has(.tab:target, .tab :target)) #overview { display: block; }
+.dash:not(:has(.tab:target, .tab :target)) .tabs a[href="#overview"], .dash:has(#overview:target, #report:target) .tabs a[href="#overview"],
+.dash:has(#pages:target) .tabs a[href="#pages"], .dash:has(#site:target) .tabs a[href="#site"], .dash:has(#meta_ads:target) .tabs a[href="#meta_ads"],
+.dash:has(#reputation:target) .tabs a[href="#reputation"], .dash:has(#social:target) .tabs a[href="#social"],
+.dash:has(#coverage:target) .tabs a[href="#coverage"] { color: var(--ink); border-bottom-color: var(--accent); }
+.tab > h2 { font-size: 20px; }
+.tab > h2 small { display: inline; margin-left: 8px; font-size: 13px; font-weight: 400; }
 .info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin: 12px 0; align-items: start; }
 .info-card { background: var(--surface); border: 1px solid #dfe2e7; border-top: 4px solid var(--neutral); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .info-card.lvl-good { border-top-color: var(--good); }
@@ -123,7 +134,7 @@ details > summary { cursor: pointer; font-weight: 600; font-size: 16px; }
 details.nested { border: 0; border-top: 1px solid #eceef2; border-radius: 0; padding: 8px 0; margin: 0; }
 details.nested > summary { font-size: 14px; font-weight: 500; }
 details h3 { font-size: 15px; margin: 18px 0 6px; }
-details h4 { font-size: 13px; margin: 12px 0 4px; color: #5d6470; }
+details h4, .tab h4 { font-size: 13px; margin: 12px 0 4px; color: #5d6470; }
 .scroll { overflow-x: auto; }
 table.data td { font-size: 13px; max-width: 420px; overflow-wrap: anywhere; }
 table.data tr.target td { background: #eef2ff; font-weight: 600; }
@@ -135,6 +146,7 @@ pre { background: #f5f6f8; padding: 10px; border-radius: 8px; white-space: pre-w
 .big { font-size: 28px; font-weight: 700; margin: 8px 0; }
 a.raw { font-size: 13px; }
 .answer { margin: 8px 0; }
+.sources { margin: 4px 0 0; padding-left: 18px; font-size: 13px; overflow-wrap: anywhere; }
 .st { font-weight: 600; }
 .st-pass, .st-complete, .st-observed { color: #1d7a46; }
 .st-warning, .st-partial { color: #a45f00; }
@@ -145,3 +157,49 @@ a.raw { font-size: 13px; }
   table, tbody, tr, td { display: block; }
   thead { display: none; }
 }
+details.history { margin-top: 16px; }
+a.button { display: inline-block; font-weight: 600; padding: 4px 10px; border-radius: 8px; background: #2b50d6; color: #fff; text-decoration: none; }
+form.site-edit div, form.site-edit label { display: block; margin: 0 0 12px; }
+form.site-edit input, form.site-edit textarea { display: block; width: 100%; box-sizing: border-box; font: inherit; padding: 8px 10px; border: 1px solid #c4c9d2; border-radius: 8px; margin-top: 4px; }
+form.site-edit small { display: block; margin: -6px 0 12px; color: #5d6470; }
+.job-mini { margin-top: 6px; }
+.job-mini .bar { height: 6px; margin-bottom: 3px; }
+.job-mini a { display: block; font-size: 12px; }
+.pending { background: #fff; border: 1px solid #dfe2e7; border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; }
+
+/* AI reputation: line icons, the three-answer verdict panel, verified quotes. */
+.ico { width: 18px; height: 18px; flex: none; vertical-align: -4px; fill: none; stroke: currentColor; stroke-width: 1.6;
+       stroke-linecap: round; stroke-linejoin: round; }
+.ico.accent { color: var(--accent); }
+.reputation > h2 .ico { width: 26px; height: 26px; vertical-align: -3px; }
+.reputation h4 .ico, .reputation summary .ico { color: var(--ink-3); margin-right: 4px; }
+.reputation summary small { display: inline; font-weight: 400; margin-left: 6px; }
+.reputation .stat-row { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.stat .label { display: flex; align-items: center; gap: 6px; }
+.stat .label .ico { color: var(--accent); }
+.verdicts { --panel: #1f2a37; --panel-ink: #f8f7f5; --panel-soft: rgba(248, 247, 245, .72);
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin: 16px 0 8px;
+            background: var(--panel); border-radius: 20px; overflow: hidden; }
+/* Dividers drawn on each card's top and left edge; the panel's rounded clip hides the ones on the outer edge. */
+.verdict { display: grid; grid-template-columns: 44px 1fr; grid-template-rows: auto auto 1fr; column-gap: 14px;
+           padding: 20px 22px; color: var(--panel-ink); box-shadow: -1px 0 0 rgba(255, 255, 255, .14), 0 -1px 0 rgba(255, 255, 255, .14); }
+.verdict > :not(.badge) { grid-column: 2; }
+.verdict p { margin: 0; }
+.verdict .badge { grid-row: 1 / span 4; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%;
+                  background: rgba(255, 255, 255, .1); color: var(--panel-ink); }
+.verdict .badge .ico { width: 22px; height: 22px; vertical-align: 0; }
+.verdict-good .badge { background: #cee3d7; color: #0f3d2a; }
+.verdict-warning .badge { background: var(--warning); color: #14201e; }
+.verdict-critical .badge { background: var(--critical); color: #fff; }
+.verdict .label { color: var(--panel-soft); font-weight: 500; }
+.verdict .word { font-size: 26px; line-height: 1.15; margin: 2px 0 6px; }
+.verdict .detail { font-size: 13px; line-height: 1.45; color: var(--panel-soft); }
+.verdict a { color: var(--panel-ink); }
+.icp-pair { display: grid; grid-template-columns: max-content 1fr; gap: 2px 10px; margin: 10px 0 0; font-size: 12px; }
+.icp-pair dt { color: var(--panel-soft); }
+.icp-pair dd { margin: 0; overflow-wrap: anywhere; }
+.quotes { list-style: none; margin: 10px 0 4px; padding: 0; font-size: 13px; }
+.quotes li { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; overflow-wrap: anywhere; }
+.quotes li.ok .ico { color: var(--good); }
+.quotes li.bad .ico { color: var(--critical); }
+.quotes li.bad span { color: var(--ink-2); }

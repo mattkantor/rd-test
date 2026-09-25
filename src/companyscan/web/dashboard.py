@@ -4,16 +4,18 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from ..dimensions.security import HEADERS as SECURITY_HEADERS
+from ..dimensions import ranking
 from ..report.analyze import latest, verify
+from ..scan.artifacts import previous_runs
 
 MISSING, UNREADABLE = "not collected", "unreadable"
 # Site-level reports shown as-is; per-page reports are folded into the page cards and only linked raw.
 SITE = ["robots", "sitemap", "crawler-access", "redirects", "llms", "feeds"]
 PER_PAGE = ["indexing", "headers", "schema", "aeo", "measurement", "social-preview", "accessibility", "security", "fonts",
             "copy-scores"]
-DIMENSIONS = ["security", "fonts", "meta_ads", "llm_reputation"]
+DIMENSIONS = ["security", "fonts", "meta_ads", "llm_reputation", "ai_search", "answer_coverage", "practitioners", "google_business", "jev_copy"]
 AREAS = ["Content", "SEO", "AEO", "Social", "Accessibility", "Analytics", "Security"]
-SORTS = ("issues", "path", "type", "slop", "bias", *(a.lower() for a in AREAS))
+SORTS = ("issues", "path", "type", "slop", "bias", "jev", *(a.lower() for a in AREAS))
 COPY = {"slop": ("ai_slop", "AI slop"), "bias": ("marketing_bias", "Marketing bias")}
 RANK = {"critical": 0, "serious": 1, "warning": 2, "neutral": 3, "good": 4}
 TITLE_MAX, DESCRIPTION_MAX = 60, 160  # ponytail: common search-snippet lengths; tune if they flag too much.
@@ -174,6 +176,22 @@ def copy_lines(p):
     return (" · " + " · ".join(suffix)) if suffix else "", problems, details
 
 
+def jev_lines(j):
+    """Content-area suffix and details for the Jev judgment of one page (technical/jev_copy.json entry)."""
+    if not j:
+        return "", []
+    if j.get("error"):
+        return "", [f"AI slop (Jev): not judged, {j['error']}"]
+    s = as_dict(j.get("ai_slop"))
+    value, confidence = num(s.get("score")), num(s.get("confidence"))
+    if value is None:
+        return "", []
+    probability = lambda v: f"{round(v * 100)}%" if num(v) is not None else "—"
+    return (f" · Jev {value} {s.get('level')}",
+            [f"AI slop (Jev): {value} ({s.get('level')}), confidence {probability(confidence)} · first-hand detail "
+             f"{probability(j.get('first_hand'))} · generic {probability(j.get('generic'))}"])
+
+
 def page_areas(p, by_url, collected):
     """Every per-page signal, grouped into the card's areas."""
     url, status, extracted = p.get("url"), p.get("status"), isinstance(p.get("visible_text"), str)
@@ -190,6 +208,8 @@ def page_areas(p, by_url, collected):
         problems.append(("warning", "Response truncated at the byte limit"))
     words, ctas = len(p["visible_text"].split()) if extracted else 0, len(as_list(p.get("ctas")))
     suffix, copy_problems, copy_details = copy_lines(p) if extracted else ("", [], [])
+    jev_suffix, jev_details = jev_lines(as_dict(by_url["jev_copy"].get(url)))
+    suffix, copy_details = suffix + jev_suffix, copy_details + jev_details
     out = [area("Content", problems + copy_problems, f"HTTP {status} · {plural(words, 'word')} · {plural(ctas, 'CTA')}{suffix}",
                 ([f"Emails: {', '.join(map(str, as_list(p.get('emails'))))}"] if as_list(p.get("emails")) else []) + copy_details)]
     if not extracted:
@@ -273,7 +293,8 @@ def page_cards(bundle, raw, sort="issues", desc=False):
     bundle = Path(bundle)
     by_url = {name: {e["url"]: e for e in as_list(entries) if isinstance(e, dict) and isinstance(e.get("url"), str)}
               for name, entries in (("indexing", raw["indexing"]), ("social-preview", as_dict(raw["social-preview"]).get("pages")),
-                                    ("security", as_dict(raw["security"]).get("pages")))}
+                                    ("security", as_dict(raw["security"]).get("pages")),
+                                    ("jev_copy", as_dict(raw["jev_copy"]).get("pages")))}
     collected = {name: isinstance(raw[name], dict) for name in ("social-preview", "measurement")}
     cards = []
     for path in sorted((bundle / "pages").glob("*.json")):
@@ -295,7 +316,8 @@ def page_cards(bundle, raw, sort="issues", desc=False):
                       "label": as_dict(p.get("classification")).get("label"), "content": content_link(bundle, p),
                       "level": worst if RANK[worst] < RANK["neutral"] else "good",
                       "issues": sum(a["problems"] for a in areas), "areas": areas,
-                      "slop": score(p, "ai_slop"), "bias": score(p, "marketing_bias")})
+                      "slop": score(p, "ai_slop"), "bias": score(p, "marketing_bias"),
+                      "jev": num(as_dict(as_dict(by_url["jev_copy"].get(p.get("url"))).get("ai_slop")).get("score"))})
     return sorted(cards, key=card_order(sort), reverse=desc)
 
 
@@ -307,7 +329,7 @@ def card_order(sort):
         order = {**RANK, "good": 3, "neutral": 4}
         return lambda c: (order[c["areas"][i]["level"]] if len(c["areas"]) > i else 5,
                           -(c["areas"][i]["problems"] if len(c["areas"]) > i else 0), sort_key(c["path"]))
-    if sort in COPY:  # Highest score first; unscored pages last.
+    if sort in (*COPY, "jev"):  # Highest score first; unscored pages last.
         return lambda c: (c.get(sort) is None, -(c.get(sort) or 0), sort_key(c["path"]))
     if sort == "path":
         return lambda c: sort_key(c["path"])
@@ -323,6 +345,47 @@ def report(bundle):
     findings = [{"id": f.get("id"), "verdict": f.get("verdict") or f.get("severity"), "title": f.get("title")}
                 for f in (found if isinstance(found, list) else []) if isinstance(f, dict)]
     return {"md": latest(bundle, "report.md"), "pdf": latest(bundle, "report.pdf"), "analysis": path, "findings": findings}
+
+
+def site_read(data):
+    """What the LLM read off the site: identity fields as (label, text) rows, plus quotes marked verified or not."""
+    data = as_dict(data)
+    found = as_dict(data.get("identity"))
+    join = lambda v: ", ".join(x for x in v if isinstance(x, str)) if isinstance(v, list) else v if isinstance(v, str) else ""
+    rows = [(label, join(found.get(key))) for key, label in (
+        ("company_name", "Name"), ("other_names", "Other names"), ("category", "Category"), ("offerings", "Sells"),
+        ("site_icp", "Sells to"), ("cities", "Cities"), ("service_area", "Serves"), ("phones", "Phones"))]
+    quotes = [q for q in as_list(found.get("evidence")) if isinstance(q, dict) and isinstance(q.get("quote"), str)]
+    return {"rows": [(label, text) for label, text in rows if text], "quotes": quotes, "pages": as_list(data.get("pages")),
+            "error": data.get("error")}
+
+
+def verdicts(scores, identity, icp):
+    """The reputation tab's three headline answers: right business? ICP fit? recommended? Each {key, icon, level, word, detail}."""
+    out = []
+    agree, conflict = as_list(identity.get("agree")), as_list(identity.get("conflict"))
+    word, level, detail = {
+        "confirmed": ("Confirmed", "good", f"{', '.join(map(str, agree))} match{'es' if len(agree) == 1 else ''} this site"),
+        "mismatch": ("Confused with a namesake", "critical",
+                     f"The model described another business ({', '.join(map(str, conflict))} differs)"),
+        "unconfirmed": ("Unconfirmed", "neutral", "The answer stated nothing checkable beyond what the prompt gave it"),
+    }.get(identity.get("verdict"), ("Not checked", "neutral", "This run predates the identity check"))
+    out.append({"key": "identity", "icon": "id", "label": "Right business?", "word": word, "level": level, "detail": detail})
+    word, level = {"aligned": ("Aligned", "good"), "partial": ("Partly aligned", "warning"),
+                   "misaligned": ("Misaligned", "critical")}.get(icp.get("verdict"), ("Not checked", "neutral"))
+    detail = icp.get("reason") or (f"The site sells to {icp['site_icp']}" if icp.get("site_icp") else
+                                   "Add an ICP to the site profile to check it against the website")
+    out.append({"key": "icp", "icon": "target", "label": "ICP fit", "word": word, "level": level, "detail": detail,
+                "user_icp": icp.get("user_icp"), "site_icp": icp.get("site_icp")})
+    rate = num(scores.get("mention_rate"))
+    word, level, detail = {
+        "recommended": ("Recommended", "good", f"Named in {round(rate * 100) if rate is not None else '?'}% of buyer answers"),
+        "not_recommended": ("Known, not recommended", "warning", "Recognized by name but never named in buyer answers"),
+        "not_found": ("Not found", "critical", "Not recognized by name or named in any buyer answer; it needs more "
+                                               "exposure (listings, reviews, press) before assistants recommend it"),
+    }.get(scores.get("visibility"), ("Unknown", "neutral", "No visibility result in this run"))
+    out.append({"key": "visibility", "icon": "eye", "label": "AI recommends it?", "word": word, "level": level, "detail": detail})
+    return out
 
 
 def reputation(data):
@@ -342,9 +405,22 @@ def reputation(data):
     board = [r for r in as_list(data["scores"].get("leaderboard")) if isinstance(r, dict)]
     top = max([num(r.get("mentions")) or 0 for r in board] + [1])
     board = [{**r, "width": round((num(r.get("mentions")) or 0) / top * 100)} for r in board]  # Bar length vs the leader.
-    scores = {**data["scores"], "leaderboard": board,
+    cited = [r for r in as_list(data["scores"].get("sources")) if isinstance(r, dict)]  # ai_search only.
+    most = max([num(r.get("answers")) or 0 for r in cited] + [1])
+    cited = [{**r, "width": round((num(r.get("answers")) or 0) / most * 100)} for r in cited]
+    scores = {**data["scores"], "leaderboard": board, "sources": cited,
               "diverging": diverging(as_dict(data["scores"].get("sentiment")).get("score"))}
-    return {"state": None, "scores": scores, "branded": as_dict(data.get("branded")), "questions": questions}
+    branded = as_dict(data.get("branded"))
+    # The crawl dimension keeps the profile at the top level; a standalone reputation run keeps it in reputation.json.
+    profile = as_dict(data.get("profile") or branded.get("profile"))
+    return {"state": None, "scores": scores, "branded": branded, "questions": questions,
+            "audience": as_dict(data.get("audience")), "identity": as_dict(branded.get("identity")),
+            "icp_check": as_dict(data.get("icp_check")), "site_read": site_read(data.get("site_read")),
+            "verdicts": verdicts(scores, as_dict(branded.get("identity")), as_dict(data.get("icp_check"))),
+            "profile": [(label, ", ".join(v for v in profile[key] if isinstance(v, str)))
+                        for key, label in (("names", "Names"), ("cities", "Cities"), ("phones", "Phones"),
+                                           ("categories", "Categories"), ("profiles", "Profiles"))
+                        if isinstance(profile.get(key), list) and profile[key]]}
 
 
 LEVEL = {"PASS": "good", "COMPLETE": "good", "OBSERVED": "good", "WARNING": "warning", "PARTIAL": "warning",
@@ -466,7 +542,8 @@ def tiles(model, raw):
         rank, rate = num(s.get("rank")), num(s.get("mention_rate"))
         named = f" · named in {round(rate * 100)}% of buyer answers" if rate is not None else ""
         out.append(tile("AI reputation", "#reputation", f"#{rank}" if rank else "—",
-                        (f"of {s.get('of')} companies" if rank else "not named by the AI") + named,
+                        (f"of {s.get('of')} companies" if rank else "unknown to the AI: needs more exposure"
+                         if s.get("visibility") == "not_found" else "not named by the AI") + named,
                         "good" if rank == 1 else "warning" if rank else "serious",
                         f"Sentiment {signed(as_dict(s.get('sentiment')).get('score'))}", meter(rate, 1)))
     elif "legacy" in rep:
@@ -504,6 +581,21 @@ def attention(model, raw):
         if missing:
             add("warning", f"{plural(len(missing), 'security header')} missing (most: {missing[0].get('header')}, "
                            f"{missing[0].get('pages')} pages)", "?sort=security#pages")
+    t = raw["answer_coverage"]
+    if isinstance(t, dict) and num(as_dict(t.get("summary")).get("missing")):
+        add("warning", f"{plural(t['summary']['missing'], 'buyer question')} not answered by any page", "#answers")
+    t = as_dict(as_dict(raw["practitioners"]).get("summary"))
+    if num(t.get("practitioners")):
+        if not t.get("with_dedicated_page"):
+            add("warning", f"None of the {plural(t['practitioners'], 'practitioner')} has their own profile page", "#people")
+        if not t.get("with_person_schema"):
+            add("warning", "No Person schema for any practitioner", "#people")
+    t = raw["google_business"]
+    if isinstance(t, dict) and t.get("status") == "OBSERVED":
+        if t.get("found") is False:
+            add("warning", "No Google Business Profile matched this site", "#listing")
+        for field in as_list(t.get("mismatches")):
+            add("serious", f"Google listing {str(field).replace('_', ' ')} differs from the website", "#listing")
     t = raw["accessibility"]
     if isinstance(t, dict) and num(t.get("finding_count")):
         add("warning", f"{plural(t['finding_count'], 'potential accessibility barrier')} (WCAG 2.2)", "?sort=accessibility#pages")
@@ -534,10 +626,17 @@ def attention(model, raw):
     s = model["reputation"].get("scores")
     if s is not None:
         score = as_dict(s.get("sentiment")).get("score")
-        if not num(s.get("rank")):
+        if s.get("visibility") == "not_found":
+            add("serious", "AI doesn't know this business: not recognized by name or named in any buyer answer", "#reputation")
+        elif not num(s.get("rank")):
             add("serious", "Not named in any AI buyer answer", "#reputation")
         if num(score) is not None and score < 0:
             add("serious", f"Negative AI sentiment ({signed(score)})", "#reputation")
+        if model["reputation"]["icp_check"].get("verdict") == "misaligned":
+            add("warning", "Your ICP doesn't match who the website sells to", "#reputation")
+        conflict = model["reputation"]["identity"].get("conflict")
+        if model["reputation"]["identity"].get("verdict") == "mismatch" and isinstance(conflict, list):
+            add("serious", f"AI describes a different business under this name ({', '.join(map(str, conflict))} differs)", "#reputation")
     return sorted(items, key=lambda i: SEVERITY.index(i["level"]))
 
 
@@ -659,6 +758,178 @@ def meta_ads_card(data):
                 note=data.get("note") or data.get("limitation"), file="technical/meta_ads.json")
 
 
+COVERAGE = {"answered": ("good", "Answered"), "partial": ("warning", "Partly answered"), "missing": ("critical", "No answer")}
+
+
+def answers(data):
+    """technical/answer_coverage.json: which high-intent buyer questions a page on the site answers."""
+    if data in (MISSING, UNREADABLE) or not isinstance(data, dict):
+        return {"state": data if data in (MISSING, UNREADABLE) else UNREADABLE}
+    if data.get("status") == "UNKNOWN":
+        return {"state": None, "unknown": data.get("error") or data.get("reason")}
+    rows = []
+    for q in as_list(data.get("questions")):
+        if isinstance(q, dict):
+            level, word = COVERAGE.get(q.get("coverage"), ("neutral", "Not judged"))
+            rows.append({**q, "level": level, "word": word})
+    order = list(COVERAGE)  # Gaps first: they're the work.
+    rows.sort(key=lambda q: -order.index(q.get("coverage")) if q.get("coverage") in order else 1)
+    return {"state": None, "summary": as_dict(data.get("summary")), "rows": rows,
+            "limitations": [str(x) for x in as_list(data.get("limitations"))]}
+
+
+PROFILE_CHECKS = [("dedicated_page", "Own page"), ("credentials", "Credentials"), ("education", "Education"),
+                  ("associations", "Associations"), ("focus", "Focus"), ("experience", "Experience"), ("media", "Media"),
+                  ("community", "Community"), ("person_schema", "Person schema"), ("same_as", "sameAs links")]
+
+
+def practitioners(data):
+    """technical/practitioners.json: each practitioner's profile checklist, thinnest profile first."""
+    if data in (MISSING, UNREADABLE) or not isinstance(data, dict):
+        return {"state": data if data in (MISSING, UNREADABLE) else UNREADABLE}
+    if data.get("status") == "UNKNOWN":
+        return {"state": None, "unknown": data.get("error") or data.get("reason")}
+    rows = []
+    for p in as_list(data.get("practitioners")):
+        if isinstance(p, dict):
+            checks = as_dict(p.get("checks"))
+            facts = [(label, ", ".join(str(v) for v in as_list(p.get(key)) if v)) for key, label in PROFILE_CHECKS[1:8]]
+            rows.append({"name": p.get("name"), "role": p.get("role"), "profile_url": p.get("profile_url"),
+                         "checks": [(label, checks.get(key) is True) for key, label in PROFILE_CHECKS],
+                         "score": sum(checks.get(key) is True for key, _ in PROFILE_CHECKS),
+                         "facts": [(label, value) for label, value in facts if value],
+                         "same_as": [u for u in as_list(as_dict(p.get("person_schema")).get("same_as")) if isinstance(u, str)],
+                         "quotes": [q for q in as_list(p.get("evidence")) if isinstance(q, dict)]})
+    rows.sort(key=lambda r: r["score"])
+    return {"state": None, "summary": as_dict(data.get("summary")), "rows": rows, "labels": [label for _, label in PROFILE_CHECKS],
+            "unmatched": [s for s in as_list(data.get("schema_people_unmatched")) if isinstance(s, dict)],
+            "limitations": [str(x) for x in as_list(data.get("limitations"))]}
+
+
+AGREES = {True: ("good", "Matches"), "variant": ("warning", "Variant"), False: ("critical", "Differs"), None: ("neutral", "Not compared")}
+
+
+def listing(data):
+    """technical/google_business.json: the Google listing next to what the site states, and its review stats."""
+    if data in (MISSING, UNREADABLE) or not isinstance(data, dict):
+        return {"state": data if data in (MISSING, UNREADABLE) else UNREADABLE}
+    if data.get("status") == "UNKNOWN":
+        return {"state": None, "unknown": data.get("note") or data.get("error") or data.get("reason")}
+    checks = []
+    for c in as_list(data.get("checks")):
+        if isinstance(c, dict):
+            level, word = AGREES.get(c.get("agrees") if c.get("agrees") in (True, False, "variant") else None)
+            checks.append({**c, "field": str(c.get("field") or "").replace("_", " ").capitalize(), "level": level, "word": word})
+    stats = as_dict(data.get("reviews"))
+    return {"state": None, "found": data.get("found") is True, "query": data.get("query"), "matched_by": data.get("matched_by"),
+            "listing": as_dict(data.get("listing")), "checks": checks, "reviews": stats,
+            "review_rows": [r for r in as_list(stats.get("reviews")) if isinstance(r, dict)],
+            "candidates": table(data.get("candidates")), "limitation": data.get("limitation")}
+
+
+def metric(label, before, after, higher_is_better=True, fmt=str):
+    """One before/after row; trend is better/worse/same, or None when either side is missing."""
+    trend = None
+    if num(before) is not None and num(after) is not None:
+        trend = "same" if before == after else None if higher_is_better is None else "better" if (after > before) == higher_is_better else "worse"
+    show = lambda v: fmt(v) if num(v) is not None else "—"
+    return {"label": label, "before": show(before), "after": show(after), "trend": trend}
+
+
+def percent(v):
+    return f"{round(v * 100)}%"
+
+
+def shift(label, before, after):
+    """Names that appeared or disappeared between two lists, as one detail line (None when nothing changed)."""
+    before, after = [x for x in before if isinstance(x, str)], [x for x in after if isinstance(x, str)]
+    gained, lost = [x for x in after if x not in before], [x for x in before if x not in after]
+    parts = ([f"new: {', '.join(gained)}"] if gained else []) + ([f"gone: {', '.join(lost)}"] if lost else [])
+    return f"{label}: {'; '.join(parts)}" if parts else None
+
+
+def question_rate(data, prompt):
+    """Share of this prompt's scored answers that name the target, scored the same way as the whole run."""
+    answers = [a for a in as_list(data.get("answers")) if isinstance(a, dict) and a.get("prompt") == prompt]
+    try:
+        return ranking.score(str(data.get("domain") or ""), answers, None, None, as_dict(data.get("profile")))["mention_rate"]
+    except (TypeError, AttributeError, KeyError, ValueError):
+        return None
+
+
+def reputation_diff(then, now):
+    a, b = as_dict(then.get("scores")), as_dict(now.get("scores"))
+    rank = lambda s: num(s.get("rank")) if s.get("rank") else None
+    own = lambda s: next((num(r.get("answers")) for r in as_list(s.get("sources")) if isinstance(r, dict) and r.get("is_target")), 0 if s.get("sources") else None)
+    metrics = [metric("Rank", rank(a), rank(b), False, lambda v: f"#{v}"), metric("Mention rate", a.get("mention_rate"), b.get("mention_rate"), fmt=percent),
+               metric("Share of voice", a.get("share_of_voice"), b.get("share_of_voice"), fmt=percent),
+               metric("Sentiment", as_dict(a.get("sentiment")).get("score"), as_dict(b.get("sentiment")).get("score"), fmt=signed)]
+    if a.get("sources") is not None or b.get("sources") is not None:
+        metrics.append(metric("Answers citing your site", own(a), own(b)))
+    prompts = lambda d: [p.get("text") for p in as_list(d.get("prompts")) if isinstance(p, dict)]
+    same = [p for p in prompts(now) if p in prompts(then)]
+    questions = [{"text": p, **metric("", question_rate(then, p), question_rate(now, p), fmt=percent)} for p in same]
+    top = lambda s, key, n: [r.get(key) for r in as_list(s.get("sources" if key == "domain" else "leaderboard"))[:n] if isinstance(r, dict) and not r.get("is_target")]
+    details = [shift("Top competitors", top(a, "company", 5), top(b, "company", 5)), shift("Top cited sites", top(a, "domain", 10), top(b, "domain", 10))]
+    return {"metrics": metrics, "questions": [q for q in questions if q["trend"] != "same"], "details": [d for d in details if d],
+            "same_questions": len(same), "questions_now": len(prompts(now))}
+
+
+def coverage_diff(then, now):
+    a, b = as_dict(then.get("summary")), as_dict(now.get("summary"))
+    status = lambda d: {q.get("question"): q.get("coverage") for q in as_list(d.get("questions")) if isinstance(q, dict)}
+    before, after = status(then), status(now)
+    rank = {"missing": 0, "partial": 1, "answered": 2}
+    questions = [{"text": q, "label": "", "before": before[q] or "—", "after": c or "—",
+                  "trend": "better" if rank.get(c, -1) > rank.get(before[q], -1) else "worse" if rank.get(c, -1) < rank.get(before[q], -1) else "same"}
+                 for q, c in after.items() if q in before]
+    return {"metrics": [metric("Answered", a.get("answered"), b.get("answered")), metric("Partly answered", a.get("partial"), b.get("partial"), None),
+                        metric("Not answered", a.get("missing"), b.get("missing"), False)],
+            "questions": [q for q in questions if q["trend"] != "same"], "details": [],
+            "same_questions": len(questions), "questions_now": len(after)}
+
+
+def practitioners_diff(then, now):
+    a, b = as_dict(then.get("summary")), as_dict(now.get("summary"))
+    names = lambda d: [p.get("name") for p in as_list(d.get("practitioners")) if isinstance(p, dict)]
+    return {"metrics": [metric(label, a.get(key), b.get(key)) for key, label in
+                        (("practitioners", "Practitioners"), ("with_dedicated_page", "With their own page"),
+                         ("with_person_schema", "With Person schema"), ("with_same_as", "With sameAs links"))],
+            "questions": [], "details": [d for d in [shift("Practitioners", names(then), names(now))] if d]}
+
+
+def listing_diff(then, now):
+    a, b = as_dict(then.get("reviews")), as_dict(now.get("reviews"))
+    mismatches = lambda d: [str(m) for m in as_list(d.get("mismatches"))]
+    return {"metrics": [metric("Rating", a.get("rating"), b.get("rating")), metric("Reviews", a.get("count"), b.get("count")),
+                        metric("Facts that differ", len(mismatches(then)), len(mismatches(now)), False)],
+            "questions": [], "details": [d for d in [shift("Differs from the website", mismatches(then), mismatches(now))] if d]}
+
+
+TRACKED = {"llm_reputation": ("AI reputation", "#reputation", reputation_diff), "ai_search": ("AI search", "#ai_search", reputation_diff),
+           "answer_coverage": ("Answer coverage", "#answers", coverage_diff), "practitioners": ("Practitioners", "#people", practitioners_diff),
+           "google_business": ("Google listing", "#listing", listing_diff)}
+
+
+def since_last(bundle, manifest, host):
+    """Each tracked check compared with the newest earlier run of this site that has it (runs don't all include it)."""
+    created = manifest.get("created_at")
+    runs = previous_runs(Path(bundle).parent, host, before=created) if isinstance(created, str) and created else []
+    out = []
+    for name, (label, href, diff) in TRACKED.items():
+        now = read(bundle, f"technical/{name}.json")
+        if not isinstance(now, dict) or now.get("status") == "UNKNOWN":
+            continue
+        for run, m in runs:
+            then = read(run, f"technical/{name}.json")
+            if isinstance(then, dict) and then.get("status") != "UNKNOWN":
+                if name == "google_business" and not (then.get("found") and now.get("found")):
+                    break  # Nothing to compare unless both runs found the listing.
+                out.append({"label": label, "href": href, "run": run.name, "created_at": m.get("created_at"), **diff(then, now)})
+                break
+    return out
+
+
 def profile_cards(data):
     cards = []
     for p in as_list(as_dict(data).get("profiles")):
@@ -688,7 +959,8 @@ def standalone_reputation(bundle, host):
     answers, scores = read(run, "reputation/answers.json"), read(run, "reputation/scores.json")
     if not (isinstance(answers, dict) and isinstance(scores, dict)):
         return UNREADABLE, None
-    data = {"status": m.get("status"), "branded": read(run, "reputation/reputation.json"), "prompts": answers.get("prompts"),
+    data = {"status": m.get("status"), "branded": read(run, "reputation/reputation.json"), "audience": answers.get("audience"),
+            "prompts": answers.get("prompts"),
             "answers": answers.get("answers"), "scores": scores}
     return data, {"dir": run.name, "created_at": created, "model": m.get("model")}
 
@@ -743,10 +1015,15 @@ def load(bundle, sort="issues", desc=False):
         "pages": page_cards(bundle, raw, sort if sort in SORTS else "issues", desc), "sort": sort if sort in SORTS else "issues",
         "desc": desc, "areas": AREAS,
         "sorts": [("issues", "Most issues"), ("path", "URL"), ("type", "Type")] + [(a.lower(), a) for a in AREAS]
-                 + [(k, label) for k, (_, label) in COPY.items()],
+                 + [(k, label) for k, (_, label) in COPY.items()] + [("jev", "AI slop (Jev)")],
         "site": site_cards(bundle, raw),
         "meta_ads": meta_ads_card(raw["meta_ads"]),
         "reputation": reputation(rep_raw),
+        "ai_search": reputation(raw["ai_search"]),
+        "answers": answers(raw["answer_coverage"]),
+        "people": practitioners(raw["practitioners"]),
+        "listing": listing(raw["google_business"]),
+        "since": since_last(bundle, manifest, host),
         "profiles": profile_cards(read(bundle, "social/discovered.json")),
         "names": company_names(read(bundle, "company.json")),
         "coverage": coverage(bundle, manifest, urls),

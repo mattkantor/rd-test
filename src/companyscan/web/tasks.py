@@ -30,7 +30,7 @@ def start(url, kind, label, run, dimensions=()):
 
 
 def crawl(job, progress):
-    args = parser().parse_args(["scan", job.url] + [arg for d in job.dimensions for arg in ("--dimension", d)])
+    args = parser().parse_args(["scan", job.url, *job.site.scan_args()] + [arg for d in job.dimensions for arg in ("--dimension", d)])
     result = run(args, output=settings.COMPANYSCAN_OUTPUT / job.run, progress=progress)
     return f"Crawled {result['counts']['pages']} pages ({result['status']})"
 

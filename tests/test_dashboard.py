@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from companyscan.web.dashboard import MISSING, UNREADABLE, describe, link, load, read, table
+from companyscan.web.dashboard import MISSING, UNREADABLE, describe, link, load, read, since_last, table
 
 SCORED = {
     "status": "COMPLETE", "domain": "acme.test", "error": None,
@@ -91,6 +91,49 @@ def full_bundle(root, name="acme", reputation=SCORED):
     return d
 
 
+def search_run(rank, mentions, sources):
+    """An ai_search result: one question asked twice, the target named in `mentions` of the answers."""
+    answers = [{"prompt": "best kids dentist?", "sample": i, "error": None,
+                "companies": [{"name": "Acme Dental", "website": "acme.test", "position": 1}] if i < mentions else [{"name": "Beta", "position": 1}]}
+               for i in range(2)]
+    return {"status": "COMPLETE", "domain": "acme.test", "profile": {}, "prompts": [{"text": "best kids dentist?"}], "answers": answers,
+            "scores": {"rank": rank, "mention_rate": mentions / 2, "share_of_voice": 0.5, "sentiment": {"score": 10},
+                       "leaderboard": [{"company": "Beta", "is_target": False}], "sources": sources}}
+
+
+class SinceLastRunTest(unittest.TestCase):
+    def test_compares_each_check_with_the_newest_earlier_run_that_has_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            def run(name, created, **files):
+                write(root / name, "manifest.json", {"input_url": "https://www.acme.test/", "created_at": created, "command": "scan"})
+                for dim, data in files.items():
+                    write(root / name, f"technical/{dim}.json", data)
+            run("jan", "2026-01-01T00:00:00+00:00", ai_search=search_run(None, 0, [{"domain": "yelp.test", "answers": 2}]),
+                answer_coverage={"summary": {"answered": 1, "partial": 1, "missing": 1},
+                                 "questions": [{"question": "Cost?", "coverage": "missing"}, {"question": "Hours?", "coverage": "answered"}]})
+            run("feb", "2026-02-01T00:00:00+00:00", ai_search={"status": "UNKNOWN"})  # Skipped: nothing to compare against.
+            run("mar", "2026-03-01T00:00:00+00:00", ai_search=search_run(2, 1, [{"domain": "acme.test", "answers": 1, "is_target": True},
+                                                                                 {"domain": "news.test", "answers": 1}]),
+                answer_coverage={"summary": {"answered": 2, "partial": 1, "missing": 0},
+                                 "questions": [{"question": "Cost?", "coverage": "partial"}, {"question": "Hours?", "coverage": "answered"}]})
+            run("apr", "2026-04-01T00:00:00+00:00")  # Later runs aren't the baseline.
+            manifest = json.loads((root / "mar/manifest.json").read_text())
+            since = {c["label"]: c for c in since_last(root / "mar", manifest, "acme.test")}
+        search = since["AI search"]
+        self.assertEqual(search["run"], "jan")
+        rows = {r["label"]: (r["before"], r["after"], r["trend"]) for r in search["metrics"]}
+        self.assertEqual(rows["Rank"], ("—", "#2", None))
+        self.assertEqual(rows["Mention rate"], ("0%", "50%", "better"))
+        self.assertEqual(rows["Answers citing your site"], ("0", "1", "better"))
+        self.assertEqual([(q["before"], q["after"]) for q in search["questions"]], [("0%", "50%")])
+        self.assertIn("Top cited sites: new: news.test; gone: yelp.test", search["details"])
+        cover = since["Answer coverage"]
+        self.assertEqual({r["label"]: r["trend"] for r in cover["metrics"]}, {"Answered": "better", "Partly answered": "same", "Not answered": "better"})
+        self.assertEqual([(q["text"], q["trend"]) for q in cover["questions"]], [("Cost?", "better")])
+        self.assertNotIn("AI reputation", since)
+
+
 class HelperTest(unittest.TestCase):
     def test_read_missing_and_unreadable(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -131,6 +174,18 @@ class LoadTest(unittest.TestCase):
 
     def tearDown(self):
         self.tmp.cleanup()
+
+    def test_jev_judgment_in_content_area_and_sort(self):
+        write(self.bundle, "technical/jev_copy.json", {"status": "OBSERVED", "pages": [
+            {"url": "https://acme.test/", "ai_slop": {"score": 74, "level": "HIGH", "confidence": 0.9}, "first_hand": 0.05, "generic": 0.8},
+            {"url": "https://acme.test/about", "error": "HTTP 429: slow down"}]})
+        m = load(self.bundle, sort="jev")
+        self.assertEqual([c["jev"] for c in m["pages"]], [74, None, None])
+        content = m["pages"][0]["areas"][0]
+        self.assertIn("Jev 74 HIGH", content["summary"])
+        self.assertIn("AI slop (Jev): 74 (HIGH), confidence 90% · first-hand detail 5% · generic 80%", content["details"])
+        about = next(c for c in m["pages"] if c["url"] == "https://acme.test/about")
+        self.assertIn("AI slop (Jev): not judged, HTTP 429: slow down", about["areas"][0]["details"])
 
     def test_header_integrity_report_tiles_and_anomalies(self):
         m = load(self.bundle)
@@ -248,8 +303,12 @@ class LoadTest(unittest.TestCase):
         write(self.bundle, "technical/security.json", {"https": False, "missing_summary": []})
         write(self.bundle, "technical/aeo.json", {"pages_checked": 3, "pages_with_syntax_errors": ["https://acme.test/"]})
         scores = {**SCORED["scores"], "rank": None, "sentiment": {**SCORED["scores"]["sentiment"], "score": -30}}
-        write(self.bundle, "technical/llm_reputation.json", {**SCORED, "scores": scores})
+        branded = {**SCORED["branded"], "identity": {"verdict": "mismatch", "agree": [], "echoed": [], "conflict": ["city"]}}
+        profile = {"names": ["Acme Dental"], "cities": ["Austin"], "phones": [], "categories": [], "profiles": []}
+        write(self.bundle, "technical/llm_reputation.json", {**SCORED, "scores": scores, "branded": branded, "profile": profile})
         levels = {a["text"]: a["level"] for a in load(self.bundle)["attention"]}
+        self.assertEqual(levels["AI describes a different business under this name (city differs)"], "serious")
+        self.assertEqual(load(self.bundle)["reputation"]["profile"], [("Names", "Acme Dental"), ("Cities", "Austin")])
         self.assertEqual(levels["Not every page is served over HTTPS"], "critical")
         self.assertEqual(levels["JSON-LD syntax errors on 1 page"], "serious")
         self.assertEqual(levels["Not named in any AI buyer answer"], "serious")
@@ -257,6 +316,30 @@ class LoadTest(unittest.TestCase):
         self.assertEqual(list(levels.values())[0], "critical")  # Most severe first.
         m = load(self.bundle)
         self.assertEqual(m["reputation"]["scores"]["diverging"], {"left": 35.0, "width": 15.0, "sign": "neg"})
+
+    def test_icp_check_and_site_read(self):
+        read = {"pages": ["https://acme.test/"], "error": None, "identity": {
+            "company_name": "Acme Dental", "offerings": ["cleanings", "braces"], "site_icp": "families", "phones": [],
+            "evidence": [{"url": "https://acme.test/", "quote": "Family dentistry", "supports": "category", "verified": True},
+                         {"url": "https://acme.test/", "quote": "<b>Made up</b>", "supports": "icp", "verified": False}]}}
+        check = {"kind": "INFERRED", "user_icp": "hospitals", "site_icp": "families", "verdict": "misaligned", "reason": "Sells to families"}
+        write(self.bundle, "technical/llm_reputation.json", {**SCORED, "icp_check": check, "site_read": read})
+        m = load(self.bundle)
+        self.assertEqual(m["reputation"]["site_read"]["rows"], [("Name", "Acme Dental"), ("Sells", "cleanings, braces"), ("Sells to", "families")])
+        self.assertEqual({a["text"]: a["level"] for a in m["attention"]}["Your ICP doesn't match who the website sells to"], "warning")
+
+    def test_reputation_verdicts(self):
+        scores = {**SCORED["scores"], "visibility": "recommended", "mention_rate": 0.4}
+        branded = {**SCORED["branded"], "identity": {"verdict": "confirmed", "agree": ["city"], "echoed": [], "conflict": []}}
+        write(self.bundle, "technical/llm_reputation.json", {**SCORED, "scores": scores, "branded": branded})
+        v = {x["key"]: (x["level"], x["word"], x["detail"]) for x in load(self.bundle)["reputation"]["verdicts"]}
+        self.assertEqual(v["identity"], ("good", "Confirmed", "city matches this site"))
+        self.assertEqual(v["icp"][:2], ("neutral", "Not checked"))
+        self.assertEqual(v["visibility"], ("good", "Recommended", "Named in 40% of buyer answers"))
+        branded["identity"] = {"verdict": "mismatch", "agree": [], "echoed": [], "conflict": ["city", "phone"]}
+        write(self.bundle, "technical/llm_reputation.json", {**SCORED, "scores": {**scores, "visibility": "not_found"}, "branded": branded})
+        v = {x["key"]: (x["level"], x["word"]) for x in load(self.bundle)["reputation"]["verdicts"]}
+        self.assertEqual((v["identity"], v["visibility"]), (("critical", "Confused with a namesake"), ("critical", "Not found")))
 
     def test_generic_font_keywords_do_not_count(self):
         families = [{"family": f, "pages": 3} for f in ("sans-serif", "Archivo", "Helvetica Neue", "Arial", "inherit", "system-ui")]
@@ -314,6 +397,101 @@ from test_web import WebCase
 
 
 class DashboardPageTest(WebCase):  # Skipped outside python manage.py test.
+    def test_renders_icp_check_and_escaped_site_quotes(self):
+        read = {"pages": ["https://acme.test/"], "error": None, "identity": {"company_name": "Acme", "evidence": [
+            {"url": "https://acme.test/", "quote": "<script>x</script>", "supports": "icp", "verified": False}]}}
+        check = {"user_icp": "hospitals", "site_icp": "families", "verdict": "partial", "reason": "Some overlap"}
+        full_bundle(self.root, reputation={**SCORED, "icp_check": check, "site_read": read})
+        page = self.client.get("/run/acme").text
+        self.assertIn('<div class="verdict verdict-warning">', page)
+        self.assertIn('<p class="word">Partly aligned</p>', page)
+        self.assertIn("<dt>Site sells to</dt><dd>families</dd>", page)
+        self.assertIn('<li class="bad">', page)
+        self.assertIn("<em>Not found on the page:</em>", page)
+        self.assertIn("&lt;script&gt;x&lt;/script&gt;", page)
+        self.assertNotIn("<script>x</script>", page)
+
+    def test_renders_ai_search_sources_safely(self):
+        d = full_bundle(self.root)
+        sources = [{"domain": "yelp.test", "citations": 3, "answers": 2, "is_target": False},
+                   {"domain": "acme.test", "citations": 1, "answers": 1, "is_target": True}]
+        answer = {**SCORED["answers"][0], "sources": [{"url": "javascript:alert(1)", "title": "<script>y</script>"},
+                                                      {"url": "https://yelp.test/acme", "title": "Acme on Yelp"}]}
+        write(d, "technical/ai_search.json", {**SCORED, "answers": [answer], "scores": {**SCORED["scores"], "sources": sources}})
+        page = self.client.get("/run/acme").text
+        self.assertIn('<a href="#ai_search">AI search</a>', page)
+        self.assertIn('<section id="ai_search"', page)
+        self.assertIn("2. acme.test (you)", page)
+        self.assertIn('href="https://yelp.test/acme"', page)
+        self.assertNotIn('href="javascript:', page)
+        self.assertIn("&lt;script&gt;y&lt;/script&gt;", page)
+
+    def test_renders_answer_coverage_safely(self):
+        d = full_bundle(self.root)
+        questions = [{"question": "<script>q</script>?", "intent": "cost", "coverage": "answered", "best_url": "https://acme.test/p",
+                      "quote": "$100", "verified": True, "gap": None, "error": None},
+                     {"question": "Open Saturday?", "intent": "availability", "coverage": "missing", "best_url": None, "gap": "No hours page."}]
+        write(d, "technical/answer_coverage.json", {"status": "COMPLETE", "questions": questions,
+                                                     "summary": {"answered": 1, "partial": 0, "missing": 1, "questions": 2}})
+        page = self.client.get("/run/acme").text
+        self.assertIn('<a href="#answers">Answers</a>', page)
+        self.assertIn("1 answered · 0 partly · 1 not answered, of 2 buyer questions", page)
+        self.assertIn("&lt;script&gt;q&lt;/script&gt;", page)
+        self.assertNotIn("<script>q</script>", page)
+        self.assertLess(page.index("Open Saturday?"), page.index("&lt;script&gt;q"))  # Gaps first.
+        self.assertIn("1 buyer question not answered by any page", page)
+
+    def test_renders_practitioners_safely(self):
+        d = full_bundle(self.root)
+        people = [{"name": "<script>p</script>", "role": "Dentist", "credentials": ["DDS"], "profile_url": "https://acme.test/team",
+                   "checks": {"credentials": True}, "evidence": [{"url": "https://acme.test/team", "quote": "DDS", "verified": True}]},
+                  {"name": "Dr. Full", "checks": {k: True for k in ("dedicated_page", "credentials", "education", "person_schema")},
+                   "person_schema": {"same_as": ["javascript:alert(1)"]}}]
+        write(d, "technical/practitioners.json", {"status": "COMPLETE", "practitioners": people,
+                                                  "summary": {"practitioners": 2, "with_dedicated_page": 0, "with_person_schema": 0},
+                                                  "schema_people_unmatched": [{"name": "Acme Admin", "pages": ["a", "b"]}]})
+        page = self.client.get("/run/acme").text
+        self.assertIn('<a href="#people">People</a>', page)
+        self.assertIn("2 practitioners · 0 with their own page · 0 with Person schema", page)
+        self.assertIn("&lt;script&gt;p&lt;/script&gt;", page)
+        self.assertNotIn("<script>p</script>", page)
+        self.assertNotIn('href="javascript:', page)
+        self.assertLess(page.index("&lt;script&gt;p"), page.index("Dr. Full"))  # Thinnest profile first.
+        self.assertIn("<strong>Acme Admin</strong> (2 pages)", page)
+        self.assertIn("None of the 2 practitioners has their own profile page", page)
+
+    def test_renders_google_listing_safely(self):
+        d = full_bundle(self.root)
+        checks = [{"field": "phone", "google": "(519) 555-0100", "site": "4165559999", "agrees": False},
+                  {"field": "postal_code", "google": "N1H 1G5", "site": None, "agrees": True}]
+        write(d, "technical/google_business.json", {"status": "OBSERVED", "found": True, "matched_by": "website", "query": "Acme",
+                                                    "mismatches": ["phone"], "checks": checks,
+                                                    "listing": {"name": "Acme", "maps": "javascript:alert(1)"},
+                                                    "reviews": {"rating": 4.8, "count": 212, "sample": 1, "sample_detailed": 0,
+                                                                "reviews": [{"rating": 5, "text": "<script>r</script>", "words": 1}]}})
+        page = self.client.get("/run/acme").text
+        self.assertIn('<a href="#listing">Google</a>', page)
+        self.assertIn("Acme · 4.8★ from 212 reviews", page)
+        self.assertIn("Differs", page)
+        self.assertIn("found on the site", page)
+        self.assertIn("&lt;script&gt;r&lt;/script&gt;", page)
+        self.assertNotIn("<script>r</script>", page)
+        self.assertNotIn('href="javascript:', page)
+        self.assertIn("Google listing phone differs from the website", page)
+
+    def test_renders_since_last_run(self):
+        d = full_bundle(self.root)
+        write(d, "technical/answer_coverage.json", {"status": "COMPLETE", "summary": {"answered": 2, "missing": 0},
+                                                     "questions": [{"question": "<b>Cost?</b>", "coverage": "answered"}]})
+        write(self.root / "older", "manifest.json", {"input_url": "https://acme.test/", "created_at": "2026-01-01T00:00:00+00:00", "command": "scan"})
+        write(self.root / "older", "technical/answer_coverage.json", {"status": "COMPLETE", "summary": {"answered": 1, "missing": 1},
+                                                                     "questions": [{"question": "<b>Cost?</b>", "coverage": "missing"}]})
+        page = self.client.get("/run/acme").text
+        self.assertIn("<summary>Since last run</summary>", page)
+        self.assertIn("(older)", page)
+        self.assertIn("&lt;b&gt;Cost?&lt;/b&gt;", page)
+        self.assertNotIn("<b>Cost?</b>", page)
+
     def test_renders_every_section_safely(self):
         full_bundle(self.root)
         page = self.client.get("/run/acme")
@@ -341,7 +519,7 @@ class DashboardPageTest(WebCase):  # Skipped outside python manage.py test.
         self.assertIn('<span class="icon" aria-hidden="true">!</span>6 warnings', page.text)
         self.assertIn('class="bar-row is-target"', page.text)
         self.assertIn('class="fill pos" style="left: 50%; width: 21.0%"', page.text)
-        self.assertIn('href="/run/acme"', self.client.get("/").text)
+        self.assertIn('href="/site/', self.client.get("/").text)
 
     def test_wrong_shaped_json_never_500s(self):
         d = full_bundle(self.root)

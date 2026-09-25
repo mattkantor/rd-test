@@ -1,0 +1,70 @@
+/* Pangram-inspired scheme (pangram.com): warm off-white, green-black ink, orange accent, deep-green panels,
+   IBM Plex Sans body, serif display headings, 20px cards, pill buttons. Loaded after app.css; remove the
+   <link> in the templates to go back to the original look.
+   ponytail: PP Eiko (their heading face) is commercial, Instrument Serif stands in. */
+@import url("https://fonts.googleapis.com/css2?family=Darker+Grotesque:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=Instrument+Serif&display=swap");
+
+:root {
+  --pg-bg: #f8f7f5; --pg-surface: #fbfbfa; --pg-ink: #14201e; --pg-ink-2: #4a5553; --pg-ink-3: #7b8583;
+  --pg-line: #e6e3dd; --pg-orange: #ff6106; --pg-orange-light: #fee3da; --pg-green: #15502e;
+  --pg-green-dark: #002b24; --pg-green-mid: #014338; --pg-mint: #cee3d7;
+}
+body { font-family: "IBM Plex Sans", -apple-system, "Helvetica Neue", Arial, sans-serif; color: var(--pg-ink); background: var(--pg-bg); }
+h1, .pages-head h2, .tab > h2 { font-family: "Instrument Serif", Georgia, serif; font-weight: 400; letter-spacing: -.02em; }
+h1 { font-family: "Darker Grotesque", "IBM Plex Sans", sans-serif; font-weight: 700; font-size: 48px; line-height: 1; letter-spacing: -.01em; }
+h1 small a { font-family: "IBM Plex Sans", sans-serif; font-size: 14px; font-weight: 400; }
+.pages-head h2, .tab > h2 { font-size: 30px; }
+a { color: var(--pg-green); }
+code, pre, .bar-value, .path, table.data td { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+.dash {
+  --ink: var(--pg-ink); --ink-2: var(--pg-ink-2); --ink-3: var(--pg-ink-3); --hairline: var(--pg-line); --surface: var(--pg-surface);
+  --accent: var(--pg-orange); --accent-track: var(--pg-orange-light); --neg: #ff5630; --mid: #efede8; --other: #c9ccc4;
+  --good: #118d57; --warning: #ffab00; --serious: #ff8a48; --critical: #d6331c; --neutral: #919eab;
+}
+
+/* Cards and panels */
+form.crawl, table, .job, .hero, .attention, .tile, .page-card, .info-card, .stat, details {
+  background: var(--pg-surface); border-color: var(--pg-line); border-radius: 20px;
+}
+table { border-radius: 16px; }
+details.nested { border-radius: 0; background: transparent; }
+th { color: var(--pg-ink-3); }
+th, td, details.nested { border-color: var(--pg-line); }
+.hero { background: var(--pg-green-dark); border-color: var(--pg-green-dark); color: #f8f7f5; }
+.hero .label { color: var(--pg-mint); }
+.hero .hero-value { color: #fff; font-family: "Instrument Serif", Georgia, serif; font-weight: 400; font-size: 76px; }
+.hero .chip { background: rgba(255, 255, 255, .12); color: #fff; }
+.tile .value, .stat .value, .big { font-family: "Instrument Serif", Georgia, serif; font-weight: 400; font-size: 40px; }
+.tile:hover { border-color: var(--pg-orange); box-shadow: 0 8px 16px rgba(20, 32, 30, .06); }
+
+/* Controls */
+button { background: var(--pg-orange); color: #fff; border-radius: 999px; padding: 9px 18px; }
+button:hover { background: #ff7a2e; }
+button:disabled { background: #d9d6cf; color: var(--pg-ink-3); }
+input[type=url] { border-color: #d3cfc6; border-radius: 999px; padding: 10px 16px; background: #fff; }
+input[type=url]:focus { outline: 2px solid var(--pg-orange); outline-offset: 1px; }
+td a { color: var(--pg-green); }
+
+/* Status */
+.chip { background: #efede8; }
+.job { border-left-color: var(--pg-orange); }
+.job-done { border-left-color: #118d57; }
+.job-error { border-left-color: #d6331c; }
+.bar { background: var(--pg-orange-light); }
+.bar > div { background: var(--pg-orange); }
+small, .meta, .muted, dl.fields dt, details h4, .tab h4 { color: var(--pg-ink-2); }
+small.done, .st-pass, .st-complete, .st-observed { color: #118d57; }
+small.running, .st-warning, .st-partial { color: #b76e00; }
+small.error, .msg, .st-fail, .st-error { color: #c4321c; }
+.tabs { background: var(--pg-bg); }
+pre { background: #f1efea; }
+table.data tr.target td { background: var(--pg-orange-light); }
+input[type=checkbox] { accent-color: var(--pg-green); }
+form + form button { background: transparent; color: var(--pg-ink); box-shadow: inset 0 0 0 1.5px var(--pg-ink); }
+form + form button:hover { background: var(--pg-ink); color: var(--pg-bg); }
+.verdicts { --panel: var(--pg-green-dark); --panel-soft: var(--pg-mint); }
+.verdict .word { font-family: "Instrument Serif", Georgia, serif; font-weight: 400; font-size: 30px; letter-spacing: -.01em; }
+a.button { background: transparent; color: var(--pg-ink); box-shadow: inset 0 0 0 1.5px var(--pg-ink); border-radius: 999px;
+           padding: 4px 12px; font-weight: 500; }
+a.button:hover { background: var(--pg-ink); color: var(--pg-bg); }

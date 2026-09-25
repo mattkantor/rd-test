@@ -4,7 +4,7 @@ import re
 import statistics
 from collections import Counter
 
-LEXICON_VERSION = "2026-09-23"
+LEXICON_VERSION = "2026-09-24"
 MIN_WORDS = 80
 CHROME_SHARE, CHROME_MIN_PAGES = 0.5, 3  # Lines on half the pages or more are nav/footer, not page copy.
 SKELETON_SHARE = 0.2  # ponytail: a line opening reused on a fifth of pages (below chrome) reads as a template skeleton.
@@ -27,7 +27,14 @@ STOCK = phrases(
     "resonate", "resonates", "crucial", "moreover", "furthermore", "additionally")
 CONTRAST = re.compile(r"\b(?:not\s+(?:just|only|merely)\b[^.!?]{0,80}?\bbut\b|isn['’]t\s+just\b|(?:it|this|that)['’]s\s+not\s+"
                       r"(?:about\s+)?[^.!?,]{1,40},\s+(?:it|this|that)['’]s\b)", re.I)
+# The same contrast split over two sentences: "They don't have a lead problem. They have a follow-up problem."
+SPLIT_CONTRAST = re.compile(r"\b(?:don['’]t|doesn['’]t|isn['’]t|aren['’]t|won['’]t|not)\b[^.!?\n]{0,80}[.!?]\s+"
+                            r"(?:they|it|we|you|this|that)(?:['’](?:s|re))?\b[^.!?\n]{0,50}[.!?]", re.I)
+# "No new process to learn, no dashboard to babysit. Just better follow-up."
+NO_JUST = re.compile(r"\bno\s+[^.!?,\n]{1,40},\s+no\s+[^.!?\n]{1,40}[.!?]\s+just\b", re.I)
 OPENERS = phrases(
+    "the result is simple", "the answer is simple", "it's that simple", "it’s that simple", "here's why", "here’s why",
+    "that's why we built", "that’s why we built", "the best part",
     "in today's", "in today’s", "whether you're", "whether you’re", "look no further", "here's the thing",
     "here’s the thing", "the short answer", "the honest answer", "the truth is", "let's dive in", "let’s dive in",
     "let's dive", "it's important to note", "it’s important to note", "it's worth noting", "at the end of the day",
@@ -65,8 +72,9 @@ AUTHORITY = re.compile(r"\b(?:experts?|certified|award[- ]winning|as seen (?:in|
                        r"\d+\+?\s+years of experience|industry veterans?|official partner|partnered with)\b", re.I)
 
 # (signal, weight, per-1k-words rate that scores 100). ponytail: thresholds calibrated on two corpora; retune with more.
-SLOP = [("stock_phrases", 25, 12), ("rhythm", 15, None), ("formula_skeleton", 15, None), ("contrast_frames", 15, 3),
-        ("formula_openers", 10, 3), ("em_dashes", 10, 12), ("triads", 10, 6)]
+# vagueness: newer models skip the stock words, so copy with no concrete numbers is a tell of its own.
+SLOP = [("stock_phrases", 20, 12), ("rhythm", 10, None), ("formula_skeleton", 15, None), ("contrast_frames", 15, 3),
+        ("formula_openers", 10, 3), ("em_dashes", 5, 12), ("triads", 10, 6), ("vagueness", 15, None)]
 BIAS = [("unsupported_claims", 20, 10), ("self_focus", 15, None), ("one_sidedness", 15, None), ("pressure", 15, 3),
         ("fomo", 10, 3), ("loss_aversion", 10, 4), ("authority", 15, 5)]
 
@@ -115,24 +123,30 @@ def skeleton(text, common):
     return {"count": len(hits), "subscore": round(min(len(hits) / 4, 1) * 100), "examples": [h[:120] for h in hits[:5]]}
 
 
+def matches(text, *patterns):
+    return sorted((m for p in patterns for m in p.finditer(text)), key=lambda m: m.start())
+
+
 def ai_slop(text, words, common=frozenset(), raw=None):
+    numbers = list(NUMBER.finditer(text))
+    specific = rated("specificity", text, numbers, words, 25)
     signals = {
         "stock_phrases": rated("stock_phrases", text, list(STOCK.finditer(text)), words, 12),
         "rhythm": rhythm(text),
         "formula_skeleton": skeleton(text, common),
-        "contrast_frames": rated("contrast_frames", text, list(CONTRAST.finditer(text)), words, 3),
-        "formula_openers": rated("formula_openers", text, list(OPENERS.finditer(text)), words, 3),
+        "contrast_frames": rated("contrast_frames", text, matches(text, CONTRAST, SPLIT_CONTRAST), words, 3),
+        "formula_openers": rated("formula_openers", text, matches(text, OPENERS, NO_JUST), words, 3),
         "em_dashes": rated("em_dashes", text, list(re.finditer("—", text)), words, 12),
         "triads": rated("triads", text, list(TRIAD.finditer(text)), words, 6),
+        "vagueness": {"count": len(numbers), "subscore": 100 - specific["subscore"], "examples": [],
+                      "note": "Few numbers with context; the specificity signal lists the ones found"},
     }
     score = sum(signals[name]["subscore"] * weight / 100 for name, weight, _ in SLOP)
     raw = raw or text  # Placeholders repeated on every page look like chrome, so check the full page text.
     template = list(TEMPLATE.finditer(raw))
     signals["template_artifacts"] = {"count": len(template), "subscore": 100 if template else 0, "examples": snippets(raw, template)}
-    numbers = list(NUMBER.finditer(text))
-    specific = rated("specificity", text, numbers, words, 25)
-    signals["specificity"] = {**specific, "note": "Counter-signal: numbers with context lower the score"}
-    score = score + 40 * bool(template) - 10 * specific["subscore"] / 100
+    signals["specificity"] = {**specific, "note": "Counter-signal: numbers with context lower the vagueness signal"}
+    score = score + 40 * bool(template)
     return finish(score, signals, [n for n, *_ in SLOP] + ["template_artifacts"])
 
 

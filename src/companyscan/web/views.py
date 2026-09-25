@@ -6,14 +6,15 @@ from urllib.parse import urlencode
 from django.conf import settings
 from django.contrib.admin.views.decorators import staff_member_required
 from django.db.models import Count
+from django.forms import modelform_factory
 from django.http import FileResponse, Http404
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from ..dimensions import DIMENSIONS
 from ..scan.crawler import normalize, origin
 from . import dashboard, tasks
-from .models import Job, Site, sync
+from .models import Job, Run, Site, sync
 
 BUSY = "That site already has a job running."
 
@@ -40,7 +41,12 @@ def back(message=""):
 
 def dashboard_or_home(bundle, return_to, message=""):
     # Built from the validated bundle's own name, so the form can't redirect anywhere else.
-    return redirect("dashboard", name=bundle.name) if return_to == "dashboard" and not message else back(message)
+    if message:
+        return back(message)
+    run = Run.objects.filter(name=bundle.name).first()
+    if return_to == "site" and run:
+        return redirect("site", pk=run.site_id)
+    return redirect("dashboard", name=bundle.name) if return_to == "dashboard" else back()
 
 
 @staff_member_required
@@ -48,11 +54,12 @@ def index(request):
     sync()
     groups = []
     for site in Site.objects.annotate(n=Count("runs")).filter(n__gt=0):
-        groups.append({"site": site.origin, "host": site.host, "runs": site.n, "latest": site.runs.first()})
+        groups.append({"pk": site.pk, "site": site.origin, "host": site.host, "runs": site.n, "latest": site.runs.first()})
     groups.sort(key=lambda g: g["latest"].created_at is not None and g["latest"].created_at.timestamp() or 0, reverse=True)
     jobs = {job.site.origin: job for job in Job.objects.select_related("site").order_by("started")}  # Latest per site wins.
+    pending = Job.objects.filter(state="running", site__runs__isnull=True).select_related("site")
     return render(request, "index.html", {"message": request.GET.get("msg", ""), "sites": groups, "jobs": jobs,
-                                          "dimensions": DIMENSIONS, "running": Job.objects.filter(state="running").exists()})
+                                          "dimensions": DIMENSIONS, "pending": pending})
 
 
 @staff_member_required
@@ -89,8 +96,8 @@ def recrawl(request):
     return dashboard_or_home(bundle, request.POST.get("return_to"), "" if job else BUSY)
 
 
-@staff_member_required
-def run_dashboard(request, name):
+def render_run(request, name, on_site=False):
+    """The dashboard for one crawl bundle, with its site's run history. on_site: rendered as the site page."""
     bundle = bundle_path(name)
     manifest = dashboard.read(bundle, "manifest.json") if bundle else None
     if not (isinstance(manifest, dict) and "counts" in manifest):  # Crawl bundles only.
@@ -98,10 +105,60 @@ def run_dashboard(request, name):
     sort, desc = request.GET.get("sort", "id"), request.GET.get("desc", "") in {"1", "true"}
     url = crawl_url(bundle)  # None for a tampered input_url: the dashboard still renders, without job status.
     job = Job.objects.filter(site__origin=origin(url)).first() if url else None
+    run = Run.objects.filter(name=name).select_related("site").first()
     # Render from root/name, not the resolved path: file_url is relative to the unresolved root (macOS /var symlink).
     view = settings.COMPANYSCAN_OUTPUT / name
     return render(request, "dashboard.html", {"m": dashboard.load(view, sort, desc), "bundle": view, "job": job,
-                                              "percent": job.percent if job else 0})
+                                              "percent": job.percent if job else 0, "site": run.site if run else None,
+                                              "history": run.site.runs.all() if run else [], "on_site": on_site})
+
+
+@staff_member_required
+def job_status(request, name):
+    """Just the job panel, for the dashboard to poll while a job runs."""
+    bundle = bundle_path(name)
+    url = crawl_url(bundle)
+    if not url:
+        raise Http404
+    job = Job.objects.filter(site__origin=origin(url)).first()
+    return render(request, "job.html", {"job": job, "percent": job.percent if job else 0, "bundle": settings.COMPANYSCAN_OUTPUT / name,
+                                        "site": Site.objects.filter(origin=origin(url)).first()})
+
+
+@staff_member_required
+def site_job(request, pk):
+    """The home page's small status for a site's latest job, polled while it runs."""
+    return render(request, "job_mini.html", {"job": get_object_or_404(Site, pk=pk).jobs.first()})
+
+
+@staff_member_required
+def site_page(request, pk):
+    """A site's current assessment (its latest crawl) plus the history of older ones."""
+    sync()
+    run = get_object_or_404(Site, pk=pk).runs.first()
+    if not run:
+        raise Http404
+    return render_run(request, run.name, on_site=True)
+
+
+# The origin is the site's identity (runs attach to it by URL), so it is set once, by the first crawl, never edited.
+SiteForm = modelform_factory(Site, fields=["business_name", "icp", "city", "state", "country"])
+
+
+@staff_member_required
+def site_edit(request, pk):
+    site = get_object_or_404(Site, pk=pk)
+    form = SiteForm(request.POST or None, instance=site)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        return redirect("site", pk=site.pk) if site.runs.exists() else back()
+    return render(request, "site_edit.html", {"site": site, "form": form})
+
+
+@staff_member_required
+def run_dashboard(request, name):
+    sync()
+    return render_run(request, name)
 
 
 @staff_member_required

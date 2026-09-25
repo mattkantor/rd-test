@@ -1,0 +1,7 @@
+{#- The home page's small job status: served alone by /site/<pk>/job for polling. -#}
+{%- if job -%}
+<div class="job-mini job-{{ job.state }}">
+  {%- if job.state == "running" %}<div class="bar"><div style="width: {{ job.percent }}%"></div></div>{% endif %}
+  <small class="{{ job.state }}">{{ job.label }}{% if job.state == "running" %} · {{ job.percent }}%{% endif %}</small>
+</div>
+{%- endif -%}

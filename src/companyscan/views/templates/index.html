@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  {% if running %}<meta http-equiv="refresh" content="4">{% endif %}
   <title>Company Footprint</title>
   <link rel="stylesheet" href="{{ static('app.css') }}">
+  <link rel="stylesheet" href="{{ static('pangram.css') }}">
 </head>
 <body>
 <main>
@@ -23,17 +23,21 @@
     <small>Public HTML only; up to 50 pages. LLM reputation calls OpenAI; Meta Ad Library needs META_ACCESS_TOKEN.</small>
   </form>
 
+  {% for job in pending %}{# First crawl of a new site: no row in the table until it finishes. #}
+  <div class="pending"><strong>{{ job.site.host }}</strong><div data-poll="/site/{{ job.site.pk }}/job">{% include "job_mini.html" %}</div></div>
+  {% endfor %}
+
   <table>
     <thead><tr><th>Site</th><th>Last crawled</th><th>Pages · status</th><th>Files</th><th>Actions</th></tr></thead>
     <tbody>
     {% for g in sites %}
       {% set r = g.latest %}{% set job = jobs.get(g.site, {}) %}
-      <tr>
-        <td><strong>{{ g.host }}</strong><small>{{ g.runs }} crawl(s)</small></td>
+      <tr data-scope>
+        <td><a href="/site/{{ g.pk }}"><strong>{{ g.host }}</strong></a><small>{{ g.runs }} crawl(s)</small></td>
         <td>{{ r.created_at | local_time }}</td>
         <td>{{ r.pages }} · {{ r.status or "" }}<small>{{ r.dimensions | join(", ") }}</small></td>
         <td>
-          <a href="/run/{{ r.dir.name | urlencode }}"><b>Dashboard</b></a>
+          <a href="/site/{{ g.pk }}"><b>Dashboard</b></a>
           <a href="{{ (r.dir / 'manifest.json') | file_url }}">manifest</a>
           {% if r.report %}<a href="{{ r.report | file_url }}">report.md</a>{% endif %}
           {% if r.pdf %}<a href="{{ r.pdf | file_url }}"><b>PDF</b></a>{% endif %}
@@ -41,13 +45,13 @@
         <td>
           <form method="post" action="/recrawl">{{ csrf_input }}
             <input type="hidden" name="dir" value="{{ r.dir.name }}">
-            <button {% if job.state == "running" %}disabled{% endif %}>Re-crawl + report</button>
+            <button data-busy {% if job.state == "running" %}disabled{% endif %}>Re-crawl + report</button>
           </form>
           <form method="post" action="/report">{{ csrf_input }}
             <input type="hidden" name="dir" value="{{ r.dir.name }}">
-            <button {% if job.state == "running" %}disabled{% endif %}>{{ "Regenerate" if r.report else "Generate" }} report</button>
+            <button data-busy {% if job.state == "running" %}disabled{% endif %}>{{ "Regenerate" if r.report else "Generate" }} report</button>
           </form>
-          <small class="{{ job.state or '' }}">{{ job.label or "" }}</small>
+          <div data-poll="/site/{{ g.pk }}/job">{% include "job_mini.html" %}</div>
         </td>
       </tr>
     {% else %}
@@ -56,5 +60,6 @@
     </tbody>
   </table>
 </main>
+<script src="{{ static('poll.js') }}"></script>
 </body>
 </html>
