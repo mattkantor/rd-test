@@ -8,7 +8,7 @@ from ..dimensions import DIMENSIONS
 from ..llm import REPORT_MODEL, chat_model
 from ..scan.copy_scores import chrome
 
-# Shipped inside the package so installed copies work; .agents/skills/footprint-analyze symlinks here for agent discovery.
+# Shipped inside the package so installed copies work.
 SKILL = Path(__file__).resolve().parents[1] / "skills/footprint-analyze/SKILL.md"
 # ponytail: ~150K tokens of bundle; page text is trimmed evenly past that. Map-reduce over pages if big sites need it all.
 BUDGET = 600_000

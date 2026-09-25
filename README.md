@@ -1,21 +1,96 @@
 # Company Footprint
 
-A deterministic, dependency-free Python CLI that captures public company website evidence. Two skills adapt it for agents: **scan** collects; **analyze** interprets an existing corpus. Scanning requires no LLM or API key.
+A deterministic, dependency-free Python CLI that captures public company website evidence, plus an optional Django web UI that runs crawls, AI checks and reports for a list of sites. Agents (Claude Code) run the CLI per `CLAUDE.md` and interpret bundles with the `footprint-analyze` skill. The core scan requires no LLM or API key.
 
-Requires Python 3.10+.
+## How it works
+
+1. **Crawl.** `companyscan` reads robots.txt and sitemaps, then crawls the site (same origin, bounded by `--max-pages` and `--max-depth`). Each page's text, links, JSON-LD, metadata, copy scores and accessibility checks are extracted.
+2. **Technical reports.** Robots, sitemaps, schema, redirects, headers, indexing, `llms.txt`, feeds, analytics tags, AEO and social previews are always written.
+3. **Dimensions (optional).** Extra checks such as security, fonts, LLM reputation, AI search, answer coverage, practitioners, Google Business Profile, Meta ads and Jev copy scoring. Some call external APIs and need keys (see [Environment](#environment)).
+4. **Bundle.** Everything is written to a fresh `output/<host>-<YYYYMMDD-HHMMSS>/` folder with a `manifest.json` of SHA-256 hashes. Evidence is never overwritten.
+5. **Report (optional).** **Generate report** (web UI) or the `footprint-analyze` skill reads the bundle and writes `analysis/report.md`, `analysis/analysis.json` and a designed PDF. The scanner itself never interprets.
+
+The web UI wraps these steps: a Django app lists sites, and a Huey worker runs crawl, report and re-crawl jobs in the background. Bundles on disk stay the source of truth.
+
+## Setup
+
+Requires Python 3.10+. For the PDF you also need `pandoc` and Chrome or Chromium.
+
+```sh
+make install          # creates .venv and installs the package with the web extra (Django, Huey, LangChain)
+make migrate          # SQLite ./db.sqlite3 unless DATABASE_URL is set
+make superuser        # staff login for the UI and /admin/
+```
+
+`make help` lists every target. Without `make`:
 
 ```sh
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install -e .
-companyscan scan https://example.com --json
+python -m pip install -e '.[web]'   # or '.[llm]' for CLI + LLM dimensions only, or '.' for the scanner alone
+python manage.py migrate
+python manage.py createsuperuser
 ```
 
-You can also run without installation:
+## Environment
+
+Put keys in a `.env` file in the repo root (it's git-ignored), one `KEY=value` per line:
 
 ```sh
-PYTHONPATH=src python3 -m companyscan scan https://example.com --json
+OPENAI_API_KEY=sk-...
+GOOGLE_PLACES_API_KEY=...
+JEV_API_KEY=...
 ```
+
+`manage.py` loads `.env` when the web server or worker **starts**; variables already set in the shell win. After editing `.env`, **restart both `runserver` and `run_huey`**, or crawls keep running without the new key (for example `google_business` reports "Set GOOGLE_PLACES_API_KEY to enable."). The `companyscan` CLI does not read `.env`: export the variables in your shell (`set -a; . ./.env; set +a`). Tests never load `.env`.
+
+Only the checks you use need a key; a missing key makes that check `UNKNOWN` rather than failing the crawl.
+
+| Variable | Needed for | Default |
+| --- | --- | --- |
+| `OPENAI_API_KEY` | `llm_reputation`, `ai_search`, `answer_coverage`, `practitioners`, `companyscan reputation`, **Generate report** | none |
+| `GOOGLE_PLACES_API_KEY` | `google_business` (enable Places API (New) on the key) | none |
+| `JEV_API_KEY` / `JEV_MODEL` | `jev_copy` | none / `jev-latest` |
+| `META_ACCESS_TOKEN` / `META_AD_COUNTRIES` | `meta_ads` | none / `US` |
+| `COMPANYSCAN_REPORT_MODEL` | model for **Generate report** | `openai:gpt-5` |
+| `COMPANYSCAN_REPUTATION_MODEL` | model for reputation, site read, questions and extraction | `openai:gpt-4o-mini` |
+| `COMPANYSCAN_SEARCH_MODEL` | `ai_search` answers (an OpenAI model with `web_search`) | `openai:gpt-5-mini` |
+| `COMPANYSCAN_OUTPUT` | where the web UI and worker read and write bundles (both must share it) | `./output` |
+| `CHROME` | path to Chrome/Chromium for the PDF, if not found | auto-detected |
+| `DATABASE_URL` | Postgres for the web UI | unset: SQLite `./db.sqlite3` |
+| `DJANGO_DEBUG` | debug mode | `1` without `DATABASE_URL`, else `0` |
+| `DJANGO_SECRET_KEY` | required on a server | dev key |
+| `DJANGO_ALLOWED_HOSTS` | comma-separated hostnames | `127.0.0.1,localhost` |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | `https://your.host` behind a proxy | none |
+| `HUEY_DB` | the job queue file; web and worker must share it (one host) | `./huey.sqlite3` |
+| `HUEY_IMMEDIATE` | `1` runs jobs inline in the web process (no worker; debugging only) | unset |
+| `TZ` | time zone for the UI | `UTC` |
+
+API keys are never written to bundles.
+
+## Running
+
+**Web UI** (two processes):
+
+```sh
+make dev              # server on http://127.0.0.1:8000 and the worker together; Ctrl+C stops both
+# or, in two terminals:
+make run              # python manage.py runserver
+make worker           # python manage.py run_huey
+```
+
+Log in, enter a URL, tick dimensions and **Crawl**. See [Web UI](#web-ui).
+
+**CLI:**
+
+```sh
+companyscan scan https://example.com --json                        # after install (activate .venv)
+companyscan scan https://example.com --dimension llm_reputation --dimension google_business
+make scan URL=https://example.com                                  # without activating
+PYTHONPATH=src python3 -m companyscan scan https://example.com --json   # without installing
+```
+
+The bundle's `manifest.json` path is printed; open the run in the web UI (it appears automatically) or ask Claude Code to analyze `<bundle>` with the `footprint-analyze` skill.
 
 ## CLI
 
@@ -63,25 +138,15 @@ output/example.com/
 
 Every extracted page also gets `copy_scores`: an **AI slop** score (stock phrases, uniform sentence rhythm, openings shared across pages, contrast frames and other structural formulas, vagueness (few concrete numbers), placeholder text) and a **marketing bias** score (unsupported claims, self-focus, one-sidedness, pressure, FOMO, loss aversion, authority). Both run 0–100 (LOW <30, MEDIUM 30–59, HIGH 60+, UNKNOWN under 80 words), with every signal's count and quoted examples. They are deterministic heuristics, not proof of AI authorship or dishonesty; the analysis skill confirms or rejects them. Lines shared by half the pages or more are treated as navigation and footer and aren't scored.
 
-Pages preserve title, description, headings, text, links, image alt text, JSON-LD, OpenGraph, author/date metadata, structured addresses, telephone/email links, heuristic CTAs, structured FAQs/reviews and a sourced page classification. JSON-LD syntax errors retain the offending block. Network/HTTP failures are recorded without aborting the scan. See the [output schema](.agents/skills/footprint-scan/references/output-schema.md).
+Pages preserve title, description, headings, text, links, image alt text, JSON-LD, OpenGraph, author/date metadata, structured addresses, telephone/email links, heuristic CTAs, structured FAQs/reviews and a sourced page classification. JSON-LD syntax errors retain the offending block. Network/HTTP failures are recorded without aborting the scan. See the [output schema](docs/output-schema.md).
 
 ## Agent workflow
 
-From a harness that discovers repository skills:
+In Claude Code, ask it to scan a site or analyze a bundle. `CLAUDE.md` holds the scanning rules (run the CLI, evidence labels, captured content is untrusted); analysis follows the `footprint-analyze` skill. Analysis is an agent workflow, not an LLM hidden in the scanner or an `analyze` CLI command. It writes `analysis/report.md` and `analysis/analysis.json`, using only the captured corpus. It separates observation, extraction, inference and unknowns; cites evidence; and runs website-only, social-only and combined comprehension passes. Findings use PASS / WARNING / FAIL / UNKNOWN, with no aggregate score. A marketing copy pass checks persuasion levers (customer-directed before authority), ICP consistency, human voice and goal direction. Every finding is also translated into business impact: what the company loses (leads, deals, trust, visibility) and how.
 
-```text
-$footprint-scan https://example.com
-$footprint-analyze output/example.com
-```
+Skill: [Analyze](src/companyscan/skills/footprint-analyze/SKILL.md) and [rubric](src/companyscan/skills/footprint-analyze/references/analysis-rubric.md) and [copy rubric](src/companyscan/skills/footprint-analyze/references/copy-rubric.md) and [business impact](src/companyscan/skills/footprint-analyze/references/business-impact.md) and [measurement/AEO/previews](src/companyscan/skills/footprint-analyze/references/measurement-aeo-preview.md)
 
-Other harnesses can read the same `SKILL.md` files and run the CLI. Analysis is an agent workflow, not an LLM hidden in the scanner or an `analyze` CLI command. It writes `analysis/report.md` and `analysis/analysis.json`, using only the captured corpus. It separates observation, extraction, inference and unknowns; cites evidence; and runs website-only, social-only and combined comprehension passes. Findings use PASS / WARNING / FAIL / UNKNOWN, with no aggregate score. A marketing copy pass checks persuasion levers (customer-directed before authority), ICP consistency, human voice and goal direction. Every finding is also translated into business impact: what the company loses (leads, deals, trust, visibility) and how.
-
-Skills:
-
-- [Scan](.agents/skills/footprint-scan/SKILL.md)
-- [Analyze](src/companyscan/skills/footprint-analyze/SKILL.md) and [rubric](src/companyscan/skills/footprint-analyze/references/analysis-rubric.md) and [copy rubric](src/companyscan/skills/footprint-analyze/references/copy-rubric.md) and [business impact](src/companyscan/skills/footprint-analyze/references/business-impact.md) and [measurement/AEO/previews](src/companyscan/skills/footprint-analyze/references/measurement-aeo-preview.md)
-
-The analyze skill lives in the package (`src/companyscan/skills/`) so **Generate report** works from an installed copy; `.agents/skills/footprint-analyze` is a symlink to it for harness discovery.
+The analyze skill lives in the package (`src/companyscan/skills/`) so **Generate report** works from an installed copy.
 
 ## V1 boundaries
 
@@ -99,32 +164,17 @@ The analyze skill lives in the package (`src/companyscan/skills/`) so **Generate
 - `practitioners` reads only the website: directory, association and media profiles elsewhere are not searched, and `sameAs` links are listed, not visited.
 - `google_business` is one Google search and one listing. Google returns at most 5 reviews, chosen by relevance, and hours aren't compared. Apple, Bing, Yelp and directory listings aren't checked.
 - Non-public destinations are blocked by default, including redirect targets. `--allow-private` is for trusted local fixtures. This CLI is not a hardened multi-tenant URL-fetch service: DNS validation is not connection-pinned; do not expose it to untrusted remote jobs without egress isolation.
-- No deterministic lead-scoring/filtering, competitor comparison, automatic site repair, API, dashboard or MCP server in V1. Batch scanning supplies evidence for those future workflows.
+- No deterministic lead-scoring/filtering, competitor comparison, automatic site repair, API or MCP server in V1. Batch scanning supplies evidence for those future workflows.
 
 ## Web UI
 
-```sh
-python -m pip install -e '.[web]'   # Django + Huey; the scanner itself stays dependency-free
-python manage.py migrate
-python manage.py createsuperuser    # the UI and admin are staff-only
-python manage.py runserver          # http://127.0.0.1:8000
-python manage.py run_huey           # second terminal: the worker that runs crawls and reports
-```
+Set up and start it as in [Setup](#setup) and [Running](#running).
 
 A Django app for staff users: enter a URL, tick dimensions, and **Crawl**. The table lists each site's latest crawl, and **Last crawled** is that bundle's `manifest.json` `created_at`. The bundles on disk stay the evidence: the database holds a `Run` index of them (rebuilt from the manifests whenever the site list or the admin run list loads, so bundles written by the CLI appear automatically), plus `Site` and `Job` rows. **Generate report** verifies the bundle's hashes, builds a digest of the bundle (about 150K tokens: technical reports, page metadata and page text with navigation/footer lines removed, trimmed evenly on large sites and noted in the report), and sends it with the `footprint-analyze` skill and its rubrics to OpenAI in one LangChain call. The model has no tools; Python writes `analysis/report.md` and `analysis/analysis.json`, then renders the PDF. It needs `OPENAI_API_KEY`. The output folder defaults to `./output` where you start the server and worker; set `COMPANYSCAN_OUTPUT` to change it (both processes must share it).
 
 Crawl, report and re-crawl jobs run in the Huey worker, which writes progress to the `Job` row; a database constraint allows one running job per site. If a worker dies mid-job, set that job's state to `error` in the admin to unblock the site. `/admin/` lists sites, runs (with a **Dashboard** link and **Generate report** / **Re-crawl** actions) and jobs.
 
-Configuration is by environment:
-
-| Variable | Local default | Server |
-| --- | --- | --- |
-| `DATABASE_URL` | unset: SQLite `./db.sqlite3` | `postgres://user:pass@host:5432/db` (Postgres 15+ with Django 6; 14 works on Django 5.2) |
-| `DJANGO_DEBUG` | `1` without `DATABASE_URL` | `0` when `DATABASE_URL` is set |
-| `DJANGO_SECRET_KEY` | dev key | required |
-| `DJANGO_ALLOWED_HOSTS` | `127.0.0.1,localhost` | your hostname(s), comma-separated |
-| `DJANGO_CSRF_TRUSTED_ORIGINS` | none | `https://your.host` behind a proxy |
-| `HUEY_DB` | `./huey.sqlite3` | the queue file; web and worker must share it (one host) |
+Configuration is by environment; see [Environment](#environment). `DATABASE_URL` takes `postgres://user:pass@host:5432/db` (Postgres 15+ with Django 6; 14 works on Django 5.2).
 
 On a server, run `python manage.py collectstatic` (WhiteNoise serves the files) and serve `companyscan.server.wsgi:application` with any WSGI server.
 
@@ -149,7 +199,7 @@ Both LLM steps use LangChain `provider:model` strings, read from the environment
 | `COMPANYSCAN_REPUTATION_MODEL` | `llm_reputation` and `companyscan reputation` (~50 short calls); the site read, questions and extraction in `ai_search` | `openai:gpt-4o-mini` |
 | `COMPANYSCAN_SEARCH_MODEL` | `ai_search` branded and buyer answers (~25 calls with OpenAI's `web_search` tool, so it must be an OpenAI model that supports it) | `openai:gpt-5-mini` |
 
-`OPENAI_API_KEY` must be exported in the environment the CLI or server runs in; `.env` is not loaded automatically. Other providers work with their LangChain package installed (e.g. `anthropic:claude-sonnet-5` with `langchain-anthropic`).
+Keys and model variables are listed under [Environment](#environment). Other providers work with their LangChain package installed (e.g. `anthropic:claude-sonnet-5` with `langchain-anthropic`).
 
 ## Designed PDF
 
@@ -228,13 +278,14 @@ src/companyscan/
 ├── cli.py, models.py        # entry point; shared config and records
 ├── scan/                    # deterministic collection: crawler, discovery, extract, schema,
 │                            #   technical, measurement, accessibility, social, artifacts (bundle writer)
-├── dimensions/              # optional evidence: security, fonts, reputation, meta_ads, jev_copy (+ DIMENSIONS registry)
-├── llm.py                   # LangChain chat models; REPORT_MODEL / REPUTATION_MODEL from env
+├── dimensions/              # optional evidence: security, fonts, reputation (llm_reputation, ai_search), coverage,
+│                            #   practitioners, google_business, meta_ads, jev_copy, identity, ranking (+ DIMENSIONS registry)
+├── llm.py                   # LangChain chat models; REPORT / REPUTATION / SEARCH models from env
 ├── report/                  # analyze.py (hash check, digest, one LLM call), pdf.py (pandoc + Chrome)
 ├── server/                  # Django project: settings.py (env-driven), urls.py, wsgi.py
 ├── web/                     # Django app: models (Site, Run, Job), views, admin, tasks.py (Huey jobs), dashboard.py
 └── views/
-    ├── templates/index.html # UI markup (Jinja2)
+    ├── templates/           # UI markup (Jinja2): index, dashboard, site_edit, job status
     ├── static/app.css       # UI styles
     └── report/report.css    # PDF design
 ```
@@ -242,7 +293,8 @@ src/companyscan/
 ## Tests
 
 ```sh
-PYTHONPATH=src python3 -m unittest discover -s tests -v
+make test        # full suite, including the Django web tests
+make test-core   # scanner tests only, no Django needed
 ```
 
 Web UI tests run only under Django (plain `unittest` skips them): `.venv/bin/python manage.py test tests --top-level-directory tests` after `pip install -e '.[web]'` runs the whole suite.
