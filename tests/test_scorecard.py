@@ -18,7 +18,10 @@ ANALYSIS = {
     "copy": {"icp_consistency": {"verdict": "PASS"}, "findings": []},
     "meta_ads": {"verdict": "UNKNOWN", "summary": "Not configured."},
     "business_impact_summary": {"ranked": ["F1", "missing"]},
+    "recommendations": [{"id": "REC1", "summary": "Publish a pricing page", "rationale_findings": ["F1"]},
+                        {"recommendation": "Fix the listing phone", "for_findings": ["G1", "G2"]}],
 }
+ANALYSIS["findings"][0]["business_impact"].update(loss_type="leads", who="Buyers comparing quotes", mechanism="They pick a rival.")
 
 
 class ScorecardTest(unittest.TestCase):
@@ -35,7 +38,24 @@ class ScorecardTest(unittest.TestCase):
         self.assertEqual(card["overall"], 62)  # (50 + 25 + 75 + 100) / 4.
         self.assertEqual((card["goal"], card["at_risk"]), (20000, 7600))
         self.assertEqual([areas[k]["at_risk"] for k in ("website", "google_business", "technical_marketing", "copy")], [2533, 3800, 1267, 0])
-        self.assertEqual(card["costliest"], ["<b>Buyers leave</b> before calling"])
+        self.assertEqual(card["losses"][0]["headline"], "<b>Buyers leave</b> before calling")
+
+    def test_loss_story_and_fixes_come_from_the_report(self):
+        card = scorecard.build(ANALYSIS, ltv=2000, customers=10)
+        areas = {a["key"]: a for a in card["areas"]}
+        self.assertEqual(card["monthly"], 633)  # 7600 / 12.
+        self.assertEqual(card["losses"][0]["who"], "Buyers comparing quotes")
+        self.assertEqual(card["by_loss"], [("Enquiries you never get", 1)])
+        self.assertEqual(card["plan"], ["Publish a pricing page", "Fix the listing phone"])
+        self.assertEqual((areas["website"]["fixes"], areas["google_business"]["fixes"]), (["Publish a pricing page"], ["Fix the listing phone"]))
+        self.assertEqual((areas["website"]["loss"]["mechanism"], areas["website"]["protects"]), ("They pick a rival.", False))
+        self.assertEqual(areas["meta_ads"]["fixes"], [])
+        with patch.dict("os.environ", {"COMPANYSCAN_SERVICE_NAME": "Acme Growth", "COMPANYSCAN_SERVICE_CTA": "Call <us>"}):
+            page = scorecard.html(card, "acme.test", "")
+        self.assertIn("How Acme Growth fixes this", page)
+        self.assertIn("Call &lt;us&gt;", page)
+        self.assertIn("$633", page)
+        self.assertIn("Buyers comparing quotes: They pick a rival.", page)
 
     def test_no_dollars_without_both_goal_fields(self):
         self.assertIsNone(scorecard.build(ANALYSIS, ltv=2000)["at_risk"])
@@ -48,6 +68,7 @@ class ScorecardTest(unittest.TestCase):
         self.assertIn("$7,600", page)
         self.assertIn("1 needs the most work: Google listing.", page)
         self.assertIn("1 failed · 1 warning", page)
+        self.assertIn("No pricing page. Buyers can&#x27;t compare.", page)
         self.assertIn("not a forecast", page)
         self.assertIn("Add customer lifetime value", scorecard.html(scorecard.build(ANALYSIS), "acme.test", ""))
 

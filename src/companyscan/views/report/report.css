@@ -187,7 +187,7 @@ tbody tr:nth-child(even) td { background: #fafbfc; }
 .limits { columns: 2; column-gap: 8mm; font-size: 8pt; color: var(--muted); }
 .limits li { break-inside: avoid; }
 
-/* Customer scorecard (report/scorecard.py): one page, scores per area. */
+/* Customer scorecard (report/scorecard.py): what it costs, each area, and how it gets fixed. */
 .scorecard .cover { padding-top: 30mm; }
 .overall { display: inline-block; padding: 3mm 6mm; border-radius: 2mm; background: rgba(255, 255, 255, 0.08); border-top: 1.2mm solid var(--sev); }
 .overall b { display: block; font-size: 40pt; line-height: 1; }
@@ -195,8 +195,21 @@ tbody tr:nth-child(even) td { background: #fafbfc; }
 .money { display: flex; gap: 4mm; margin: 4mm 0; }
 .money div { flex: 1; padding: 3mm 4mm; background: var(--wash); border-radius: 2mm; border-top: 1.2mm solid var(--sev, var(--accent)); font-size: 8.5pt; color: var(--muted); }
 .money b { display: block; font-size: 20pt; line-height: 1.2; color: var(--ink); }
-.scorecard .tile .score { display: block; font-size: 22pt; line-height: 1.1; color: var(--sev); }
-.scorecard .tile .risk, .scorecard .tile .counts { display: block; font-size: 8pt; color: var(--muted); }
-.scorecard .tile .risk { font-weight: 700; color: var(--ink); }
-.costliest { font-size: 9.5pt; }
+.losses { padding-left: 5mm; }
+.losses li { margin-bottom: 2.5mm; break-inside: avoid; }
+.losses span { display: block; font-size: 9pt; color: #333a45; }
+.losses em { display: block; font-size: 8pt; font-style: normal; text-transform: uppercase; letter-spacing: 0.06em; }
+.area { display: grid; grid-template-columns: 24mm 1fr; gap: 4mm; margin: 0 0 3mm; padding: 3mm 4mm; border: 1px solid var(--rule); border-left: 1.5mm solid var(--sev); border-radius: 1.5mm; break-inside: avoid; }
+.area-score b { display: block; font-size: 24pt; line-height: 1.1; color: var(--sev); }
+.area .risk, .area .counts { display: block; font-size: 8pt; color: var(--muted); }
+.area .risk { font-weight: 700; color: var(--ink); }
+.area h3 { margin: 0; font-size: 11.5pt; color: var(--ink); }
+.area p { margin: 1mm 0 2mm; font-size: 9pt; color: #333a45; }
+.area dl { display: grid; grid-template-columns: 26mm 1fr; gap: 1mm 3mm; margin: 0; font-size: 9pt; }
+.area dt { font-size: 8pt; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); padding-top: 0.6mm; }
+.area dd { margin: 0; }
+.area dd ul { margin: 0; padding-left: 4mm; }
+.fix { margin-top: 8mm; padding: 5mm 6mm; background: var(--wash); border-top: 1.2mm solid var(--accent); border-radius: 2mm; break-inside: avoid; }
+.fix h2 { margin-top: 0; }
+.cta { margin: 4mm 0 0; padding: 3mm 4mm; font-weight: 700; color: #fff; background: var(--accent); border-radius: 1.5mm; }
 .note { font-size: 8pt; color: var(--muted); }

@@ -57,6 +57,7 @@ Only the checks you use need a key; a missing key makes that check `UNKNOWN` rat
 | `COMPANYSCAN_SEARCH_MODEL` | `ai_search` answers (an OpenAI model with `web_search`) | `openai:gpt-5-mini` |
 | `COMPANYSCAN_OUTPUT` | where the web UI and worker read and write bundles (both must share it) | `./output` |
 | `CHROME` | path to Chrome/Chromium for the PDF, if not found | auto-detected |
+| `COMPANYSCAN_SERVICE_NAME` / `_PITCH` / `_CTA` | who fixes it, the pitch and the call to action on the customer scorecard | draft DrGrow copy (set your own before sending) |
 | `DATABASE_URL` | Postgres for the web UI | unset: SQLite `./db.sqlite3` |
 | `DJANGO_DEBUG` | debug mode | `1` without `DATABASE_URL`, else `0` |
 | `DJANGO_SECRET_KEY` | required on a server | dev key |
@@ -211,10 +212,14 @@ Renders the newest `analysis/**/report.md` to `report.html` and `report.pdf` bes
 
 ### Customer scorecard
 
-**Customer scorecard** on a run's dashboard (once it has a report) downloads a PDF for the customer, rendered from the newest `analysis.json` with no LLM call (`report/scorecard.py`; needs Chrome, not pandoc). It has an overview paragraph, an overall 0–100 score, the growth goal and estimated value at risk, the three costliest issues, and one tile per area of the analysis with its score, value at risk, finding counts and the report's summary for that area.
+**Customer scorecard** on a run's dashboard (once it has a report) downloads a PDF for the customer, rendered from the newest `analysis.json` with no LLM call (`report/scorecard.py`; needs Chrome, not pandoc). It has:
+
+- **What this is costing you:** the growth goal, the estimated value at risk and what each month unfixed costs, an overview, the three costliest losses from the report's business impact (who is lost and what they do instead), and a count of open issues per loss type ("Buyers who never find you: 6 issues").
+- **By area:** each area's score, value at risk, finding counts and the report's summary, with what it's costing (or, for a passing area, why it matters) and what we'll do: the report's recommendations for that area's findings.
+- **How DrGrow fixes this:** the service pitch, the first three recommendations as the plan, and the call to action. Name, pitch and call to action come from `COMPANYSCAN_SERVICE_NAME`, `COMPANYSCAN_SERVICE_PITCH` and `COMPANYSCAN_SERVICE_CTA`; the defaults are draft copy, so set your own before sending.
 
 - **Area score:** its findings averaged as PASS 100, WARNING 50, FAIL 0 (UNKNOWN left out), or its verdicts when it has no findings. Top-level findings no area claims make up a "Website" area. **Overall:** the mean of the areas that could be scored.
-- **Dollars:** set **Customer lifetime value ($)** and **New customers wanted** on the site's edit page. Growth goal = LTV × new customers; estimated at risk = goal × (100 − overall) %, split across areas by their score gaps. Without both fields the scorecard shows no dollar value.
+- **Dollars:** set **Customer lifetime value ($)** and **New customers wanted per year** on the site's edit page. Growth goal = LTV × new customers; estimated at risk = goal × (100 − overall) %, split across areas by their score gaps; each month unfixed = at risk ÷ 12. Without both fields the scorecard shows no dollar value.
 - These are estimates derived from verdicts, not measurements or a forecast, and the scorecard says so. They're the one place the project shows a score (see `CLAUDE.md`); the report itself stays verdict-only. The PDF is rewritten on each download, so it always uses the site's current LTV and goal.
 
 ## Dimensions
@@ -260,7 +265,7 @@ companyscan reputation example.com --company-name "Example Co" --prompts-file bu
 companyscan reputation joespizza.com --company-name "Joe's Pizza" --icp "families ordering takeout" --location "Austin, TX, USA"
 ```
 
-In the web UI, set a Site's business name, ICP, category, people, other names, official profiles, (for a local business only) city, state and country, and, for the customer scorecard, customer lifetime value and new customers wanted with **Edit profile** on the site page (or in `/admin/`). Blank category, people, other names and profiles are pre-filled from the latest crawl's identity profile for you to check and save. A site's URL is set when it is first crawled and can't be edited; crawls pass them as `--company-name`, `--icp`, `--category`, `--person`, `--alias`, `--known-profile` and `--location`.
+In the web UI, set a Site's business name, ICP, category, people, other names, official profiles, (for a local business only) city, state and country, and, for the customer scorecard, customer lifetime value and new customers wanted per year with **Edit profile** on the site page (or in `/admin/`). Blank category, people, other names and profiles are pre-filled from the latest crawl's identity profile for you to check and save. A site's URL is set when it is first crawled and can't be edited; crawls pass them as `--company-name`, `--icp`, `--category`, `--person`, `--alias`, `--known-profile` and `--location`.
 
 In the `llm_reputation` dimension it first **reads the site**, since the model can't browse it: one call sends the text of up to 6 crawled pages (homepage, about, services, products, pricing, locations, contact, case studies first; 4,000 characters each) and gets back the business's name, category, offerings, the people it names, cities, service area, phones and who the site sells to, with supporting quotes. Each quote is checked against the captured text and marked `verified`. When the Site has an ICP, the same call judges whether the site sells to it (`icp_check`: `aligned`, `partial` or `misaligned`, INFERRED). Without a user ICP or location, the buyer questions use the site's instead of the model's guess.
 

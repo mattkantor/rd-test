@@ -3,7 +3,11 @@
 Each area of the analysis gets a 0-100 score from its findings (PASS 1, WARNING 0.5, FAIL 0; UNKNOWN left out) or, with
 none, from its verdict; the overall score is the mean of the areas that could be scored. With the customer's lifetime
 value and the new customers they want, the growth goal is priced and the estimated value at risk is the goal times the
-overall score gap, split across areas by their gaps. Scores and dollars are estimates derived from verdicts, never proof."""
+overall score gap, split across areas by their gaps. Scores and dollars are estimates derived from verdicts, never proof.
+
+The loss story comes from the report's business_impact on each finding (who is lost and how) and the fixes from its
+recommendations; the service pitch and call to action come from COMPANYSCAN_SERVICE_* settings (service())."""
+import os
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -15,10 +19,25 @@ WEIGHT = {"PASS": 1, "LOW": 1, "INFO": 1, "WARNING": 0.5, "MEDIUM": 0.5, "FAIL":
 NOT_AREAS = {"source_manifest", "coverage", "comprehension", "business_impact_summary"}
 LABELS = {**LABELS, "copy": "Website copy", "technical_marketing": "Technical marketing", "security": "Security",
           "fonts": "Fonts", "citation_gap": "Cited by AI search", "website": "Website"}
+# business-impact.md loss types, said from the owner's side.
+LOSS_WORDS = {"leads": "Enquiries you never get", "conversions": "Interested buyers who don't book", "deal_value": "Deals that close smaller",
+              "sales_cycle": "Deals that stall", "trust": "Buyers who doubt you", "visibility": "Buyers who never find you",
+              "wasted_effort": "Marketing spend that returns nothing"}
 COUNT_WORDS = {"FAIL": "failed", "WARNING": "warning", "PASS": "passed", "UNKNOWN": "unknown"}
 ESTIMATE = ("Scores are 100 when every finding in an area passes, 50 when they are all warnings, 0 when they all fail. "
             "Value at risk is an estimate: your customer lifetime value times the new customers you want, times the "
-            "overall score gap. It shows scale, not a forecast.")
+            "overall score gap. It shows scale, not a forecast. The monthly figure assumes the goal is for one year.")
+
+
+def service():
+    """Who fixes it, from COMPANYSCAN_SERVICE_NAME/_PITCH/_CTA. The defaults are draft copy: set your own before sending."""
+    return {"name": os.environ.get("COMPANYSCAN_SERVICE_NAME") or "DrGrow",
+            "pitch": os.environ.get("COMPANYSCAN_SERVICE_PITCH") or (
+                "DrGrow finds the gaps that keep buyers and AI assistants from choosing you, fixes them in order of what "
+                "they cost you, and re-scans so you can see each score move."),
+            "cta": os.environ.get("COMPANYSCAN_SERVICE_CTA") or (
+                "Reply to this email to book a 30-minute walkthrough of your scorecard and a fix plan for the areas "
+                "costing you most.")}
 
 
 def score(verdicts):
@@ -54,17 +73,23 @@ def areas(analysis):
             s["summary"] if isinstance(s.get("summary"), str) else f"{k.replace('_', ' ').capitalize().replace('Icp', 'ICP')}: {level(s['verdict'])}."
             for k, s in subs.items())
         out.append({"key": key, "label": LABELS.get(key, key.replace("_", " ").capitalize()), "score": score(verdicts),
-                    "counts": counts(found), "summary": summary or first_issue(found)})
+                    "counts": counts(found), "summary": summary or first_issue(found), "findings": found})
     website = [f for i, f in pool.items() if i not in claimed]
     if website:
         out.insert(0, {"key": "website", "label": LABELS["website"], "score": score(f.get("severity") for f in website),
-                       "counts": counts(website), "summary": first_issue(website)})
+                       "counts": counts(website), "summary": first_issue(website), "findings": website})
     return out
+
+
+def sentences(*parts):
+    """Join a headline and its explanation as sentences: headlines usually have no closing stop."""
+    parts = [str(p).strip() for p in parts if p and str(p).strip()]
+    return " ".join(p if p[-1] in ".!?…" or p is parts[-1] else p + "." for p in parts)
 
 
 def first_issue(findings):
     worst = sorted(findings, key=lambda f: WEIGHT.get(level(f.get("severity")), 2))
-    return " ".join(str(worst[0].get(k)) for k in ("title", "interpretation") if worst and worst[0].get(k)) if worst else ""
+    return sentences(worst[0].get("title"), worst[0].get("interpretation")) if worst else ""
 
 
 def build(analysis, ltv=None, customers=None):
@@ -79,12 +104,43 @@ def build(analysis, ltv=None, customers=None):
         gaps = sum(100 - a["score"] for a in scored)
         for a in scored:
             a["at_risk"] = round(card["at_risk"] * (100 - a["score"]) / gaps) if gaps else 0
-    impact = analysis.get("business_impact_summary") if isinstance(analysis.get("business_impact_summary"), dict) else {}
-    by_id = {str(f.get("id")): f for f in items(analysis.get("findings"))}
-    card["costliest"] = [str(by_id[str(i)]["business_impact"]["headline"]) for i in impact.get("ranked") or []
-                         if isinstance(by_id.get(str(i), {}).get("business_impact"), dict)
-                         and by_id[str(i)]["business_impact"].get("headline")][:3]
+        card["monthly"] = round(card["at_risk"] / 12)
+    plan = recommendations(analysis)
+    for a in rows:
+        ids = {str(f.get("id")) for f in a["findings"]}
+        a["fixes"] = [text for text, fixes in plan if ids & fixes][:2]
+        worst = sorted((f for f in a["findings"] if impact(f).get("headline")), key=lambda f: WEIGHT.get(level(f.get("severity")), 2))
+        a["loss"] = impact(worst[0]) if worst else {}
+        a["protects"] = bool(worst) and level(worst[0].get("severity")) in ("PASS", "LOW", "INFO")
+    summary = analysis.get("business_impact_summary") if isinstance(analysis.get("business_impact_summary"), dict) else {}
+    pool = {str(f.get("id")): f for f in items(analysis.get("findings"))}
+    open_ = [f for f in pool.values() if level(f.get("severity")) not in ("PASS", "LOW", "INFO") and impact(f).get("headline")]
+    ranked = [pool[str(i)] for i in summary.get("ranked") or [] if str(i) in pool and pool[str(i)] in open_] or \
+        sorted(open_, key=lambda f: ({"high": 0, "medium": 1, "low": 2}.get(str(impact(f).get("magnitude")).lower(), 3)))
+    card["losses"] = [impact(f) for f in ranked[:3]]
+    types = {}
+    for f in open_:
+        word = LOSS_WORDS.get(str(impact(f).get("loss_type")))
+        if word:
+            types[word] = types.get(word, 0) + 1
+    card["by_loss"] = sorted(types.items(), key=lambda t: -t[1])
+    card["plan"] = [text for text, _ in plan][:3]
     return card
+
+
+def impact(finding):
+    return finding.get("business_impact") if isinstance(finding.get("business_impact"), dict) else {}
+
+
+def recommendations(analysis):
+    """[(text, finding IDs it fixes)] in the report's priority order; the rubric's and older field names both work."""
+    out = []
+    for r in items(analysis.get("recommendations")):
+        text = r.get("recommendation") or r.get("summary")
+        ids = r.get("for_findings") or r.get("rationale_findings") or []
+        if isinstance(text, str) and text.strip():
+            out.append((text.strip(), {str(i) for i in ids} if isinstance(ids, list) else set()))
+    return out
 
 
 def band(value):
@@ -104,35 +160,55 @@ def overview(card, host):
     scored = [a for a in card["areas"] if a["score"] is not None]
     if not scored:
         return f"The analysis of {host} had no areas with enough evidence to score."
-    weak = [a["label"] for a in sorted(scored, key=lambda a: a["score"]) if a["score"] < 50]
-    text = f"We checked {len(card['areas'])} areas of how {host} shows up to buyers online and scored {len(scored)} of them. "
-    text += (f"{len(weak)} need{'s' if len(weak) == 1 else ''} the most work: {', '.join(weak[:4])}"
-             f"{' and others' if len(weak) > 4 else ''}. " if weak
-             else "None scored below 50. ")
+    text = ""
     if card["at_risk"] is not None:
-        text += (f"Against a growth goal worth {money(card['goal'])}, the gaps put an estimated {money(card['at_risk'])} "
-                 "at risk.")
+        text += (f"Right now, gaps in how {host} shows up to buyers online put an estimated {money(card['at_risk'])} of your "
+                 f"{money(card['goal'])} growth goal at risk: about {money(card['monthly'])} for every month they stay open. ")
+    weak = [a["label"] for a in sorted(scored, key=lambda a: a["score"]) if a["score"] < 50]
+    text += f"We checked {len(card['areas'])} areas and scored {len(scored)} of them. "
+    text += (f"{len(weak)} need{'s' if len(weak) == 1 else ''} the most work: {', '.join(weak[:4])}"
+             f"{' and others' if len(weak) > 4 else ''}." if weak else "None scored below 50.")
     return text
 
 
+def area_card(a):
+    loss = a["loss"]
+    rows = [(("Why it matters" if a["protects"] else "Costing you"),
+             esc(sentences(loss.get("headline"), loss.get("mechanism"))))] if loss else []
+    if a["fixes"]:
+        rows.append(("What we'll do", "<ul>" + "".join(f"<li>{esc(clip(f, 220))}</li>" for f in a["fixes"]) + "</ul>"))
+    tally = " · ".join(f"{n} {COUNT_WORDS[k]}{'s' if n != 1 and k == 'WARNING' else ''}" for k, n in a["counts"].items())
+    return (f'<article class="area s-{band(a["score"])}"><div class="area-score"><b>{esc(a["score"]) if a["score"] is not None else "—"}</b>'
+            + (f'<span class="risk">{money(a["at_risk"])} at risk</span>' if a.get("at_risk") else "")
+            + f'</div><div><h3>{esc(a["label"])}</h3>' + (f'<span class="counts">{tally}</span>' if tally else "")
+            + f'<p>{esc(clip(a["summary"]))}</p>'
+            + (f'<dl>{"".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in rows)}</dl>' if rows else "") + "</div></article>")
+
+
 def html(card, host, captured):
-    tile = lambda a: (f'<div class="tile s-{band(a["score"])}"><span class="tile-label">{esc(a["label"])}</span>'
-                      f'<b class="score">{esc(a["score"]) if a["score"] is not None else "—"}</b>'
-                      + (f'<span class="risk">{money(a["at_risk"])} at risk</span>' if a.get("at_risk") else "")
-                      + (f'<span class="counts">{" · ".join(f"{n} {COUNT_WORDS[k]}{"s" if n != 1 and k == "WARNING" else ""}" for k, n in a["counts"].items())}</span>' if a["counts"] else "")
-                      + f'<p>{esc(clip(a["summary"]))}</p></div>')
-    money_row = (f'<div class="money"><div><b>{money(card["goal"])}</b>Growth goal value</div>'
-                 f'<div class="s-FAIL"><b>{money(card["at_risk"])}</b>Estimated at risk</div></div>' if card["at_risk"] is not None else
-                 '<p class="note">Add customer lifetime value and new customers wanted to the site profile to see the dollar value.</p>')
-    costliest = "".join(f"<li>{esc(c)}</li>" for c in card["costliest"])
+    offer = service()
+    money_row = (f'<div class="money"><div><b>{money(card["goal"])}</b>Your growth goal</div>'
+                 f'<div class="s-FAIL"><b>{money(card["at_risk"])}</b>Estimated at risk</div>'
+                 f'<div class="s-WARNING"><b>{money(card["monthly"])}</b>Each month it waits</div></div>' if card["at_risk"] is not None else
+                 '<p class="note">Add customer lifetime value and new customers wanted per year to the site profile to see what this is costing.</p>')
+    losses = "".join(f'<li><b>{esc(l.get("headline"))}</b>'
+                     + (f'<span>{esc(l["who"])}: {esc(l.get("mechanism") or "")}</span>' if l.get("who") else
+                        f'<span>{esc(l.get("mechanism") or "")}</span>')
+                     + f'<em>{esc(LOSS_WORDS.get(str(l.get("loss_type")), ""))}</em></li>' for l in card["losses"])
+    by_loss = "".join(f"<span>{esc(word)}: {n} issue{'s' if n != 1 else ''}</span>" for word, n in card["by_loss"])
+    plan = "".join(f"<li>{esc(clip(p, 260))}</li>" for p in card["plan"])
     return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{esc(host)} scorecard</title>'
             f'<style>{CSS.read_text(encoding="utf-8")}</style></head><body class="designed scorecard">'
             f'<section class="cover"><div class="eyebrow">Online presence scorecard</div><div class="cover-title">{esc(host)}</div>'
-            f'<p class="meta">Captured {esc(captured[:10])}</p><div class="overall s-{band(card["overall"])}">'
+            f'<p class="meta">Captured {esc(captured[:10])} · prepared by {esc(offer["name"])}</p><div class="overall s-{band(card["overall"])}">'
             f'<b>{esc(card["overall"]) if card["overall"] is not None else "—"}</b><span>Overall score</span></div></section>'
-            f'<h2>Overview</h2><p>{esc(overview(card, host))}</p>{money_row}'
-            + (f'<h4>Costliest issues</h4><ol class="costliest">{costliest}</ol>' if costliest else "")
-            + f'<h2>By area</h2><div class="tiles">{"".join(tile(a) for a in card["areas"])}</div>'
+            f'<h2>What this is costing you</h2>{money_row}<p>{esc(overview(card, host))}</p>'
+            + (f'<h4>Where you’re losing customers</h4><ol class="losses">{losses}</ol>' if losses else "")
+            + (f'<div class="chips">{by_loss}</div>' if by_loss else "")
+            + f'<section class="page"><h2>By area</h2>{"".join(area_card(a) for a in card["areas"])}</section>'
+            f'<section class="fix"><h2>How {esc(offer["name"])} fixes this</h2><p>{esc(offer["pitch"])}</p>'
+            + (f'<h4>Your first steps</h4><ol class="plan">{plan}</ol>' if plan else "")
+            + f'<p class="cta">{esc(offer["cta"])}</p></section>'
             f'<p class="note">{esc(ESTIMATE)}</p></body></html>')
 
 

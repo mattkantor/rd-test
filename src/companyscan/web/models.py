@@ -40,8 +40,8 @@ class Site(models.Model):
     # For the customer scorecard's dollar value: the growth goal is customer_ltv x target_customers.
     customer_ltv = models.PositiveIntegerField("Customer lifetime value ($)", null=True, blank=True,
                                                help_text="What one new customer is worth over the relationship")
-    target_customers = models.PositiveIntegerField("New customers wanted", null=True, blank=True,
-                                                   help_text="How many new customers the business wants to win, e.g. this year")
+    target_customers = models.PositiveIntegerField("New customers wanted per year", null=True, blank=True,
+                                                   help_text="How many new customers the business wants to win in a year")
     place_id = models.CharField("Google place ID", max_length=255, blank=True,
                                 help_text="Filled in by the first crawl that finds the Google listing; clear it to search again")
     # The last LLM read of the site ({key, identity, ...}, see reputation.read_site): reused while the page text, ICP and
