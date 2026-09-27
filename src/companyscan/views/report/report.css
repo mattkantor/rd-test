@@ -186,3 +186,17 @@ tbody tr:nth-child(even) td { background: #fafbfc; }
 .chips span { padding: 0.5mm 2.5mm; border: 1px solid var(--rule); border-radius: 3mm; font-size: 8.5pt; }
 .limits { columns: 2; column-gap: 8mm; font-size: 8pt; color: var(--muted); }
 .limits li { break-inside: avoid; }
+
+/* Customer scorecard (report/scorecard.py): one page, scores per area. */
+.scorecard .cover { padding-top: 30mm; }
+.overall { display: inline-block; padding: 3mm 6mm; border-radius: 2mm; background: rgba(255, 255, 255, 0.08); border-top: 1.2mm solid var(--sev); }
+.overall b { display: block; font-size: 40pt; line-height: 1; }
+.overall span { font-size: 8.5pt; color: #c9cdd4; }
+.money { display: flex; gap: 4mm; margin: 4mm 0; }
+.money div { flex: 1; padding: 3mm 4mm; background: var(--wash); border-radius: 2mm; border-top: 1.2mm solid var(--sev, var(--accent)); font-size: 8.5pt; color: var(--muted); }
+.money b { display: block; font-size: 20pt; line-height: 1.2; color: var(--ink); }
+.scorecard .tile .score { display: block; font-size: 22pt; line-height: 1.1; color: var(--sev); }
+.scorecard .tile .risk, .scorecard .tile .counts { display: block; font-size: 8pt; color: var(--muted); }
+.scorecard .tile .risk { font-weight: 700; color: var(--ink); }
+.costliest { font-size: 9.5pt; }
+.note { font-size: 8pt; color: var(--muted); }

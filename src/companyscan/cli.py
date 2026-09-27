@@ -54,6 +54,7 @@ def parser(json_errors=False):
         cmd.add_argument("--category", help="What kind of business, e.g. 'pediatric dentist'; steers buyer questions")
         cmd.add_argument("--person", action="append", default=[], help="Founder or principal's name (repeatable)")
         cmd.add_argument("--alias", action="append", default=[], help="Another name the business uses (repeatable)")
+        cmd.add_argument("--place-id", help="Google Places id of the business's listing (google_business); skips the name search")
         cmd.add_argument("--company-name")
         cmd.add_argument("--icp", help="Ideal customer profile for llm_reputation buyer questions")
         cmd.add_argument("--location", help="City, State, Country for a local business (llm_reputation)")
@@ -96,7 +97,11 @@ def run(args, target=None, output=None, progress=None):
     config.validate()
     client = Client(config)
     # Question-based dimensions reuse the newest earlier run's questions for this site, so runs can be compared question
-    # by question; only runs asked for the same ICP and location qualify.
+    # by question; only runs asked for the same ICP, location and category qualify. args.saved_questions (set by the web
+    # app from its stored sets, not a CLI flag) overrides that per dimension; see dimensions.reputation.previous().
+    client.saved_questions = getattr(args, "saved_questions", None) or {}
+    # One LLM site read per run, shared by the dimensions that read the site; args.site_reads (web app) adds earlier ones.
+    client.site_reads = dict(getattr(args, "site_reads", None) or {})
     client.previous_runs = [] if getattr(args, "fresh_questions", False) else [
         run for run, m in previous_runs(output.parent, urlsplit(target).hostname)
         if all((m.get("config") or {}).get(key) == getattr(config, key) for key in ("icp", "location", "category"))]

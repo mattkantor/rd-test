@@ -911,21 +911,45 @@ TRACKED = {"llm_reputation": ("AI reputation", "#reputation", reputation_diff), 
            "google_business": ("Google listing", "#listing", listing_diff)}
 
 
-def since_last(bundle, manifest, host):
-    """Each tracked check compared with the newest earlier run of this site that has it (runs don't all include it)."""
+# What each tracked check keeps in a snapshot: the parts its diff reads.
+SNAPSHOT = {"llm_reputation": ("status", "domain", "scores", "profile", "prompts", "answers"),
+            "answer_coverage": ("status", "summary", "questions"), "practitioners": ("status", "summary", "practitioners"),
+            "google_business": ("status", "found", "reviews", "mismatches")}
+SNAPSHOT["ai_search"] = SNAPSHOT["llm_reputation"]
+
+
+def snapshot(name, data):
+    """The part of a tracked check's JSON that since_last compares, small enough to keep after its bundle is deleted:
+    answers without their text, review stats without the reviews. None when the check didn't run."""
+    if not isinstance(data, dict) or data.get("status") == "UNKNOWN":
+        return None
+    kept = {key: data[key] for key in SNAPSHOT[name] if key in data}
+    if "answers" in kept:
+        kept["answers"] = [{k: a.get(k) for k in ("prompt", "companies", "error")} for a in as_list(kept["answers"]) if isinstance(a, dict)]
+    if name == "google_business":
+        kept["reviews"] = {k: as_dict(kept.get("reviews")).get(k) for k in ("rating", "count")}
+    return kept
+
+
+def since_last(bundle, manifest, host, earlier=None):
+    """Each tracked check compared with the newest earlier run of this site that has it (runs don't all include it).
+    earlier: [(run name, created_at, check name -> its data or snapshot)], newest first; the web app passes its stored
+    snapshots so deleted runs still count. Default: the bundles next to this one."""
     created = manifest.get("created_at")
-    runs = previous_runs(Path(bundle).parent, host, before=created) if isinstance(created, str) and created else []
+    if earlier is None:
+        runs = previous_runs(Path(bundle).parent, host, before=created) if isinstance(created, str) and created else []
+        earlier = [(run.name, m.get("created_at"), lambda name, run=run: read(run, f"technical/{name}.json")) for run, m in runs]
     out = []
     for name, (label, href, diff) in TRACKED.items():
         now = read(bundle, f"technical/{name}.json")
         if not isinstance(now, dict) or now.get("status") == "UNKNOWN":
             continue
-        for run, m in runs:
-            then = read(run, f"technical/{name}.json")
+        for run, when, get in earlier:
+            then = get(name)
             if isinstance(then, dict) and then.get("status") != "UNKNOWN":
                 if name == "google_business" and not (then.get("found") and now.get("found")):
                     break  # Nothing to compare unless both runs found the listing.
-                out.append({"label": label, "href": href, "run": run.name, "created_at": m.get("created_at"), **diff(then, now)})
+                out.append({"label": label, "href": href, "run": run, "created_at": when, **diff(then, now)})
                 break
     return out
 
@@ -986,7 +1010,7 @@ def coverage(bundle, manifest, urls):
             "raw": [f for f in files if f.startswith(("technical/", "social/")) or "/" not in f]}
 
 
-def load(bundle, sort="issues", desc=False):
+def load(bundle, sort="issues", desc=False, earlier=None):
     bundle = Path(bundle)
     manifest = read(bundle, "manifest.json")
     manifest = manifest if isinstance(manifest, dict) else {}
@@ -1023,7 +1047,7 @@ def load(bundle, sort="issues", desc=False):
         "answers": answers(raw["answer_coverage"]),
         "people": practitioners(raw["practitioners"]),
         "listing": listing(raw["google_business"]),
-        "since": since_last(bundle, manifest, host),
+        "since": since_last(bundle, manifest, host, earlier),
         "profiles": profile_cards(read(bundle, "social/discovered.json")),
         "names": company_names(read(bundle, "company.json")),
         "coverage": coverage(bundle, manifest, urls),

@@ -10,7 +10,7 @@ from ..cli import directory_name, parser, run
 from ..report.analyze import analyze
 from ..report.pdf import render_pdf
 from ..scan.crawler import origin
-from .models import Job, Site, sync
+from .models import Job, Site, remember, sync
 
 
 def new_run(url):
@@ -31,7 +31,11 @@ def start(url, kind, label, run, dimensions=()):
 
 def crawl(job, progress):
     args = parser().parse_args(["scan", job.url, *job.site.scan_args()] + [arg for d in job.dimensions for arg in ("--dimension", d)])
+    # Stored questions for this profile; a dimension with none yet takes the newest matching bundle's, then they're stored.
+    args.saved_questions = job.site.saved_questions()
+    args.site_reads = {job.site.site_read["key"]: job.site.site_read} if job.site.site_read else {}
     result = run(args, output=settings.COMPANYSCAN_OUTPUT / job.run, progress=progress)
+    remember(job.site, settings.COMPANYSCAN_OUTPUT / job.run)
     return f"Crawled {result['counts']['pages']} pages ({result['status']})"
 
 

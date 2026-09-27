@@ -2,17 +2,20 @@
 
 One Places API (New) Text Search for the business name and city. A result counts as this business only when its website
 is this domain or its phone is one of the site's; otherwise nothing is picked, so a namesake is never reported as the
-listing. The API key goes in a header and never enters the bundle."""
+listing. With a place id (--place-id, stored by the web app from the first match) that listing is fetched directly, so
+runs follow the same listing. The API key goes in a header and never enters the bundle."""
 import json
 import os
 import re
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from ..models import now
 from . import identity
 
 URL = "https://places.googleapis.com/v1/places:searchText"
+DETAILS = "https://places.googleapis.com/v1/places/"
 FIELDS = ["id", "displayName", "formattedAddress", "addressComponents", "nationalPhoneNumber", "internationalPhoneNumber",
           "websiteUri", "googleMapsUri", "primaryType", "primaryTypeDisplayName", "types", "businessStatus",
           "regularOpeningHours", "rating", "userRatingCount", "reviews"]
@@ -30,6 +33,24 @@ def search(query, key, timeout):
         "X-Goog-FieldMask": ",".join(f"places.{f}" for f in FIELDS)})
     with urlopen(request, timeout=timeout) as r:
         return json.load(r).get("places") or []
+
+
+def details(place_id, key, timeout):
+    request = Request(DETAILS + quote(place_id, safe=""), headers={"X-Goog-Api-Key": key, "X-Goog-FieldMask": ",".join(FIELDS)})
+    with urlopen(request, timeout=timeout) as r:
+        return json.load(r)
+
+
+def lookup(place_id, query, key, timeout):
+    """(results, "place_id") for a known listing, else (results, "search"). A place id Google no longer knows (moved
+    or closed listing) falls back to the search."""
+    if place_id:
+        try:
+            return [details(place_id, key, timeout)], "place_id"
+        except HTTPError as exc:
+            if exc.code not in (400, 404):
+                raise
+    return search(query, key, timeout), "search"
 
 
 def component(place, kind):
@@ -118,7 +139,7 @@ def collect(client, discovery, pages, brand):
     if not key:
         return {**base, "status": "UNKNOWN", "reason": "no_key", "note": "Set GOOGLE_PLACES_API_KEY to enable."}
     try:
-        places = search(query, key, getattr(config, "timeout", 15))
+        places, base["lookup"] = lookup(getattr(config, "place_id", None), query, key, getattr(config, "timeout", 15))
     except HTTPError as exc:
         return {**base, "status": "UNKNOWN", "reason": "api_error", "error": exc.read(2000).decode("utf-8", "replace")}
     except (URLError, OSError, ValueError) as exc:
@@ -126,16 +147,17 @@ def collect(client, discovery, pages, brand):
     candidates = [{"name": (p.get("displayName") or {}).get("text"), "address": p.get("formattedAddress"),
                    "website": p.get("websiteUri"), "maps": p.get("googleMapsUri"), "matched_by": match(p, domain, profile["phones"])}
                   for p in places if isinstance(p, dict)]
-    place = next((p for p, c in zip(places, candidates) if c["matched_by"]), None)
+    # A given place id is the user's (or an earlier match's) word that this is the listing, even if it no longer ties.
+    place = places[0] if base["lookup"] == "place_id" and places else next((p for p, c in zip(places, candidates) if c["matched_by"]), None)
     if place is None:  # No result ties to this site: not proof there's no listing, but none was found for this query.
         return {**base, "status": "OBSERVED", "found": False, "candidates": candidates}
     structured, site_text = site_facts(pages)
     checks = compare(place, profile, domain, site_text)
     # Summary first: the report digest trims each file from the end.
-    return {**base, "status": "OBSERVED", "found": True, "matched_by": match(place, domain, profile["phones"]),
+    return {**base, "status": "OBSERVED", "found": True, "matched_by": match(place, domain, profile["phones"]) or "place_id",
             "mismatches": [c["field"] for c in checks if c["agrees"] is False], "checks": checks,
             "reviews": reviews(place),
-            "listing": {"name": (place.get("displayName") or {}).get("text"), "address": place.get("formattedAddress"),
+            "listing": {"place_id": place.get("id"), "name": (place.get("displayName") or {}).get("text"), "address": place.get("formattedAddress"),
                         "phone": place.get("nationalPhoneNumber"), "website": place.get("websiteUri"),
                         "maps": place.get("googleMapsUri"), "category": place.get("primaryType"), "types": place.get("types"),
                         "business_status": place.get("businessStatus"),

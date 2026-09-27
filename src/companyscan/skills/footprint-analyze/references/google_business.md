@@ -1,7 +1,7 @@
 # Google listing
 
-Source: `technical/google_business.json`: one Google Places text search (`query`) for the business's name and city.
-- `found`: whether a result is tied to this site, by its website (`matched_by: website`) or its phone (`phone`). `false` means no result was; `candidates` lists what the search returned.
+Source: `technical/google_business.json`: one Google Places text search (`query`) for the business's name and city, or, when a place ID was given (`lookup: place_id`), that listing fetched directly.
+- `found`: whether a result is tied to this site, by its website (`matched_by: website`) or its phone (`phone`); `place_id` means the listing was fetched by its stored ID but no longer ties to the site by website or phone, itself worth a WARNING. `false` means no result was; `candidates` lists what the search returned.
 - `checks[]`: `field` (`name`, `phone`, `website`, `postal_code`, `street_number`, `category`), what Google lists (`google`), what the site states (`site`), and `agrees`: `true`, `false`, `"variant"` (one name contains the other) or `null` (not compared). Postal code and street number are searched for in the site's addresses and page text. `mismatches` lists the fields that disagree.
 - `listing`: name, address, phone, website, Maps link, category and types, `business_status`, `hours`.
 - `reviews`: `rating` and `count` (all Google reviews), and the up to 5 reviews Google returned (`sample`): each one's `rating`, `published`, `words` and `text`, with `sample_latest`, `sample_oldest` and `sample_detailed` (20+ words).

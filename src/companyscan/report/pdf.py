@@ -28,12 +28,16 @@ def badges(html):
     return head + sep + body
 
 
+def chrome_path():
+    return next((c for c in CHROMES if c and (Path(c).is_file() or shutil.which(c))), None)
+
+
 def render_pdf(bundle):
     bundle = Path(bundle).resolve()  # Chrome needs an absolute file:// URI.
     md = latest(bundle, "report.md")
     if not md:
         raise ValueError(f"No analysis/report.md in {bundle}; generate the report first")
-    chrome = next((c for c in CHROMES if c and (Path(c).is_file() or shutil.which(c))), None)
+    chrome = chrome_path()
     if not shutil.which("pandoc") or not chrome:
         raise ValueError("PDF rendering needs pandoc and Chrome/Chromium (set CHROME=/path/to/chrome)")
     title = next((line[2:].strip() for line in md.read_text(encoding="utf-8").splitlines() if line.startswith("# ")), "Report")

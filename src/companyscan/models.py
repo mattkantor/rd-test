@@ -35,6 +35,7 @@ class Config:
     person: list = field(default_factory=list)  # Founders or principals, e.g. for a personal-brand practice.
     alias: list = field(default_factory=list)  # Other names: former names, product names, short forms.
     known_profile: list = field(default_factory=list)  # Official profile URLs (LinkedIn, Crunchbase, ...).
+    place_id: str | None = None  # Google Places id of the business's listing; google_business fetches it directly.
 
     def validate(self) -> None:
         if min(self.max_pages, self.max_bytes, self.max_sitemaps, self.max_urls) < 1:

@@ -45,4 +45,4 @@ When asked to analyze a bundle, read and follow `src/companyscan/skills/footprin
 ## Conventions
 
 - Keep the core scanner stdlib-only; third-party deps go in optional extras and are imported lazily.
-- Evidence labels are `OBSERVED` / `EXTRACTED` / `INFERRED` / `UNKNOWN`; findings use PASS / WARNING / FAIL / UNKNOWN with no aggregate score. Heuristics (classifications, CTAs, copy scores, accessibility) must never be presented as proof.
+- Evidence labels are `OBSERVED` / `EXTRACTED` / `INFERRED` / `UNKNOWN`; findings use PASS / WARNING / FAIL / UNKNOWN with no aggregate score, except the customer scorecard (`report/scorecard.py`), whose 0–100 scores and dollar value are derived from those verdicts and always labelled as estimates. Heuristics (classifications, CTAs, copy scores, accessibility) must never be presented as proof.

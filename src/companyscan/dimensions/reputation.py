@@ -68,9 +68,18 @@ SEARCH_LIMITATIONS = [("Answers use one model's web search on one date; results 
                       if line.startswith("No web search") else line for line in LIMITATIONS]
 
 
+# Question-based dimensions and the key their questions sit under in technical/<name>.json.
+QUESTIONS = {"llm_reputation": "prompts", "ai_search": "prompts", "answer_coverage": "questions"}
+
+
 def previous(client, name):
-    """The newest earlier run's technical/<name>.json for this site, as (run directory name, data); (None, None) if none.
-    client.previous_runs comes from cli.run(): earlier runs asked for the same ICP and location, newest first."""
+    """Questions to reuse for dimension `name`, as (where they came from, data with them under QUESTIONS[name]); (None,
+    None) to write new ones. client.saved_questions (the web app's stored sets, from cli.run) wins: {name: {"from": run,
+    key: [...]}} reuses those, {name: None} writes new ones. Otherwise the newest earlier run's technical/<name>.json;
+    client.previous_runs are earlier runs asked for the same ICP, location and category, newest first."""
+    saved = getattr(client, "saved_questions", None) or {}
+    if name in saved:
+        return (saved[name].get("from"), saved[name]) if isinstance(saved[name], dict) else (None, None)
     for run in getattr(client, "previous_runs", None) or ():
         try:
             data = json.loads((Path(run) / f"technical/{name}.json").read_text(encoding="utf-8"))
@@ -164,9 +173,11 @@ def squash(value):
     return " ".join(value.split()).lower() if isinstance(value, str) else ""
 
 
-def read_site(llm, domain, pages, icp=None):
+def read_site(llm, domain, pages, icp=None, memo=None):
     """One LLM read of the most telling crawled pages: the business's identity, who it sells to, and (with icp) whether
-    that matches. Quotes are checked against the captured text, so an invented one shows as verified: false."""
+    that matches. Quotes are checked against the captured text, so an invented one shows as verified: false.
+    memo: {key: record} of earlier reads; the key hashes the model and the whole prompt (page text and icp), so a read is
+    reused only for the same input. cli.run shares one per run, pre-filled by the web app with the site's last read."""
     label = lambda p: (p.get("classification") or {}).get("label")
     chosen = sorted((p for p in pages if isinstance(p.get("visible_text"), str) and p["visible_text"].strip()),
                     key=lambda p: READ_ORDER.index(label(p)) if label(p) in READ_ORDER else len(READ_ORDER))[:READ_PAGES]
@@ -177,6 +188,9 @@ def read_site(llm, domain, pages, icp=None):
     text = "\n\n".join(f"=== {p['url']}\nTitle: {p.get('title') or ''}\nDescription: {p.get('meta_description') or ''}\n"
                         f"{p['visible_text'][:READ_CHARS]}" for p in chosen)
     prompt = READ.format(domain=domain, pages=text, icp_task=ICP_TASK.format(icp=icp) if icp else NO_ICP_TASK)
+    record["key"] = hashlib.sha256(f"{REPUTATION_MODEL}\n{prompt}".encode()).hexdigest()
+    if memo is not None and isinstance(memo.get(record["key"]), dict):
+        return json.loads(json.dumps(memo[record["key"]]))  # A copy: callers add to what they get back.
     try:
         found = llm.with_structured_output(SITE_SCHEMA).invoke(prompt)
     except Exception as exc:  # The rest of the check still runs on the JSON-LD profile.
@@ -190,6 +204,8 @@ def read_site(llm, domain, pages, icp=None):
         if isinstance(item, dict):
             item["verified"] = bool(squash(item.get("quote"))) and squash(item.get("quote")) in source.get(item.get("url"), "")
     record["identity"] = found
+    if memo is not None:
+        memo[record["key"]] = record
     return record
 
 
@@ -262,16 +278,16 @@ def visibility(recognized, rank):
 
 
 def rank_reputation(domain, llm, company_name=None, prompts=None, samples=3, num_prompts=8, progress=None,
-                    icp=None, location=None, pages=(), answerer=None, source=None, fingerprint=None):
+                    icp=None, location=None, pages=(), answerer=None, source=None, fingerprint=None, memo=None):
     """Site read, branded check, then unbranded buyer questions sampled and scored into a rank and sentiment.
     pages (crawled page records) are read by the LLM and, with their JSON-LD, build the identity profile that tells this
     company from namesakes. icp/location are user-supplied; without them the buyer questions use what the site says,
     then what the branded answer inferred. A user icp is checked against who the site sells to. source labels given
-    prompts ("previous" when reused from an earlier run; default "user"). answerer (default llm)
+    prompts ("previous" when reused from an earlier run or the site's saved set; default "user"). answerer (default llm)
     writes the branded and buyer answers; llm reads the site, writes the questions and does every extraction.
-    fingerprint: user-supplied identity.build keywords (category, aliases, people, profiles)."""
+    fingerprint: user-supplied identity.build keywords (category, aliases, people, profiles). memo: see read_site."""
     host = urlsplit(normalize(domain)).netloc.removeprefix("www.")
-    site = read_site(llm, host, pages, icp) if pages else None
+    site = read_site(llm, host, pages, icp, memo) if pages else None
     found = (site or {}).get("identity") or {}
     fingerprint = fingerprint or {}
     profile = identity.build(domain, pages, company_name, location, found, **fingerprint)
@@ -347,7 +363,7 @@ def collect(client, discovery, pages, brand, search=False):
         result = rank_reputation(discovery["origin"], llm, name, progress=getattr(client, "progress", None),
                                  icp=getattr(config, "icp", None), location=getattr(config, "location", None), pages=pages,
                                  answerer=answerer, prompts=prompts, source="previous" if prompts else None,
-                                 fingerprint=fingerprint)
+                                 fingerprint=fingerprint, memo=getattr(client, "site_reads", None))
     except Exception as exc:  # Missing key, auth, network and provider errors share no base class.
         return {"status": "UNKNOWN", "reason": "llm_request_failed", "error": str(exc), "limitations": limitations}
     models = {"model": SEARCH_MODEL, "extraction_model": REPUTATION_MODEL} if search else {"model": REPUTATION_MODEL}

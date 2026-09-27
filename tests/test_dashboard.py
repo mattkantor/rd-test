@@ -1,5 +1,6 @@
 import hashlib
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -483,7 +484,8 @@ class DashboardPageTest(WebCase):  # Skipped outside python manage.py test.
         d = full_bundle(self.root)
         write(d, "technical/answer_coverage.json", {"status": "COMPLETE", "summary": {"answered": 2, "missing": 0},
                                                      "questions": [{"question": "<b>Cost?</b>", "coverage": "answered"}]})
-        write(self.root / "older", "manifest.json", {"input_url": "https://acme.test/", "created_at": "2026-01-01T00:00:00+00:00", "command": "scan"})
+        write(self.root / "older", "manifest.json", {"input_url": "https://acme.test/", "created_at": "2026-01-01T00:00:00+00:00",
+                                                     "command": "scan", "counts": {"pages": 1}})
         write(self.root / "older", "technical/answer_coverage.json", {"status": "COMPLETE", "summary": {"answered": 1, "missing": 1},
                                                                      "questions": [{"question": "<b>Cost?</b>", "coverage": "missing"}]})
         page = self.client.get("/run/acme").text
@@ -491,6 +493,10 @@ class DashboardPageTest(WebCase):  # Skipped outside python manage.py test.
         self.assertIn("(older)", page)
         self.assertIn("&lt;b&gt;Cost?&lt;/b&gt;", page)
         self.assertNotIn("<b>Cost?</b>", page)
+        shutil.rmtree(self.root / "older")  # Its stored snapshot still counts.
+        page = self.client.get("/run/acme").text
+        self.assertIn("(older)", page)
+        self.assertIn("&lt;b&gt;Cost?&lt;/b&gt;", page)
 
     def test_renders_every_section_safely(self):
         full_bundle(self.root)

@@ -100,14 +100,14 @@ def judge(llm, question, candidates, bodies):
     return row
 
 
-def check_coverage(llm, domain, pages, icp=None, location=None, progress=None, questions=None):
-    """questions: reuse these (from an earlier run) instead of reading the site and writing new ones."""
+def check_coverage(llm, domain, pages, icp=None, location=None, progress=None, questions=None, memo=None):
+    """questions: reuse these (from an earlier run) instead of reading the site and writing new ones. memo: see read_site."""
     usable = [p for p in pages if isinstance(p.get("visible_text"), str) and p["visible_text"].strip() and not p.get("duplicate_of")]
     if not usable:
         return {"status": "UNKNOWN", "reason": "no_page_text", "questions": []}
     shared = chrome(usable)  # The same nav/footer stripping the copy scores use.
     bodies = {p["url"]: "\n".join(line for line in p["visible_text"].splitlines() if line not in shared) for p in usable}
-    site = {"pages": [], "identity": None, "error": None} if questions else read_site(llm, domain, usable, icp)
+    site = {"pages": [], "identity": None, "error": None} if questions else read_site(llm, domain, usable, icp, memo)
     questions = questions or write_questions(llm, domain, (site or {}).get("identity") or {}, icp, location)
     if not questions:
         return {"status": "UNKNOWN", "reason": "no_questions", "site_read": site, "questions": []}
@@ -136,7 +136,8 @@ def collect(client, discovery, pages, brand):
         llm = chat_model(REPUTATION_MODEL, timeout=120)
         result = check_coverage(llm, urlsplit(discovery["origin"]).netloc.removeprefix("www."), pages,
                                 icp=getattr(config, "icp", None), location=getattr(config, "location", None),
-                                progress=getattr(client, "progress", None), questions=questions)
+                                progress=getattr(client, "progress", None), questions=questions,
+                                memo=getattr(client, "site_reads", None))
     except Exception as exc:  # Missing key, auth, network and provider errors share no base class.
         return {"status": "UNKNOWN", "reason": "llm_request_failed", "error": str(exc), "limitations": LIMITATIONS}
     return {**result, "model": REPUTATION_MODEL, "questions_from": run if questions else None, "limitations": LIMITATIONS}

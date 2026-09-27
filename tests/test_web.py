@@ -19,7 +19,7 @@ if DJANGO:
     from companyscan.cli import parser
     from companyscan.dimensions import DIMENSIONS
     from companyscan.web import tasks
-    from companyscan.web.models import Job, Run, Site, sync
+    from companyscan.web.models import Job, QuestionSet, Run, Site, sync
 else:
     TestCase = unittest.TestCase
 
@@ -95,6 +95,80 @@ class WebTests(WebCase):
         job = self.job()
         self.assertEqual((job.state, job.label, job.run), ("done", "Crawled 7 pages (COMPLETE)", seen["output"].name))
         self.assertTrue(job.finished)
+
+    def test_crawls_ask_the_stored_questions_until_new_ones_are_asked_for(self):
+        seen, runs, asked = [], [], ["q1"]
+
+        def fake_run(args, output, progress=None):
+            seen.append(args.saved_questions)
+            runs.append(output.name)
+            (output / "technical").mkdir(parents=True, exist_ok=True)
+            (output / "manifest.json").write_text(json.dumps({"config": {"icp": args.icp, "location": None, "category": None}}))
+            (output / "technical/ai_search.json").write_text(json.dumps({"status": "COMPLETE", "prompts": [
+                {"text": q, "source": "generated"} for q in asked]}))
+            return {"counts": {"pages": 1}, "status": "COMPLETE"}
+
+        site = Site.objects.create(origin="https://acme.test", icp="families")
+        crawl = lambda: self.client.post("/crawl", {"url": "acme.test", "dimension": ["ai_search"]})
+        with patch.object(tasks, "run", fake_run):
+            crawl()  # Nothing stored: the dimension falls back to the newest matching bundle, then its questions are stored.
+            asked[:] = ["q2"]  # What a dimension would write if asked to; stored sets stop that.
+            crawl()
+            self.assertContains(self.client.get(f"/site/{site.pk}/edit"), "<li>q1</li>")
+            self.client.post(f"/site/{site.pk}/questions")
+            crawl()
+            crawl()
+            site.icp = "retirees"  # A new profile gets its own set; the old one is kept for switching back.
+            site.save()
+            crawl()
+        self.assertEqual(seen[:2], [{}, {"ai_search": {"from": runs[0], "prompts": [{"text": "q1"}]}}])
+        self.assertEqual(seen[2]["ai_search"], None)  # Emptied: write new ones.
+        self.assertEqual(seen[3]["ai_search"]["prompts"], [{"text": "q2"}])
+        self.assertEqual(seen[4], {})
+        self.assertEqual(sorted(QuestionSet.objects.values_list("icp", "kind")),
+                         [("families", "ai_search"), ("families", "answer_coverage"), ("families", "llm_reputation"),
+                          ("retirees", "ai_search")])
+        self.assertEqual(self.client.get(f"/site/{site.pk}/questions").status_code, 405)
+
+    def test_crawl_stores_the_site_read_and_place_id_for_the_next_one(self):
+        seen = []
+
+        def fake_run(args, output, progress=None):
+            seen.append((args.place_id, args.site_reads))
+            (output / "technical").mkdir(parents=True, exist_ok=True)
+            (output / "manifest.json").write_text(json.dumps({"config": {}}))
+            (output / "technical/llm_reputation.json").write_text(json.dumps({"status": "COMPLETE", "site_read": {
+                "key": "k1", "pages": [], "identity": {"category": "dentist"}, "error": None}}))
+            (output / "technical/google_business.json").write_text(json.dumps({"found": True, "listing": {"place_id": "p1"}}))
+            return {"counts": {"pages": 1}, "status": "COMPLETE"}
+
+        with patch.object(tasks, "run", fake_run):
+            self.client.post("/crawl", {"url": "acme.test"})
+            self.client.post("/crawl", {"url": "acme.test"})
+        site = Site.objects.get()
+        self.assertEqual(seen[0], (None, {}))
+        self.assertEqual(seen[1][0], "p1")
+        self.assertEqual(seen[1][1]["k1"]["identity"], {"category": "dentist"})
+        self.assertEqual((site.place_id, site.site_read["reused_from"]), ("p1", self.job().run))
+
+    def test_scorecard_uses_the_sites_goal(self):
+        d = bundle(self.root, "acme", "https://acme.test/", "2026-01-01T00:00:00+00:00")
+        self.client.get("/")
+        site = Site.objects.get()
+        self.assertNotContains(self.client.get("/run/acme"), "Customer scorecard")  # No report yet.
+        self.assertIn("generate+the+report+first", self.client.get("/run/acme/scorecard.pdf")["location"])
+        (d / "analysis/analysis.json").write_text(json.dumps({"findings": [{"id": "F1", "severity": "WARNING"}]}))
+        (d / "analysis/report.md").write_text("# Acme\n")
+        site.customer_ltv, site.target_customers = 1000, 4
+        site.save()
+        seen = []
+        with patch("companyscan.report.scorecard.chrome_path", lambda: "chrome"), \
+                patch("companyscan.report.scorecard.print_pdf", lambda chrome, html, pdf: seen.append(html.read_text()) or pdf.write_bytes(b"%PDF")):
+            response = self.client.get("/run/acme/scorecard.pdf")
+        self.assertEqual((response["content-type"], b"".join(response.streaming_content)), ("application/pdf", b"%PDF"))
+        self.assertIn("$2,000", seen[0])  # 1000 x 4 x a 50-point gap.
+        self.assertContains(self.client.get("/run/acme"), "/run/acme/scorecard.pdf")
+        self.assertEqual(self.client.get("/run/nope/scorecard.pdf").status_code, 404)
 
     def test_bad_url_busy_site_and_unknown_bundle(self):
         response = self.client.post("/crawl", {"url": "ftp://acme.test"})

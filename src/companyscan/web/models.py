@@ -8,8 +8,10 @@ from django.core.validators import URLValidator
 from django.db import models
 from django.db.models import Q
 
+from ..dimensions.reputation import QUESTIONS
 from ..report.analyze import latest
 from ..scan.crawler import normalize, origin
+from .dashboard import SNAPSHOT, snapshot
 
 
 def lines(text):
@@ -35,6 +37,16 @@ class Site(models.Model):
     aliases = models.TextField("Other names", blank=True, help_text="Former names, product names, short forms; one per line")
     profiles = models.TextField("Official profiles", blank=True, validators=[validate_urls],
                                 help_text="LinkedIn, Crunchbase, G2, Google Business Profile URLs; one per line")
+    # For the customer scorecard's dollar value: the growth goal is customer_ltv x target_customers.
+    customer_ltv = models.PositiveIntegerField("Customer lifetime value ($)", null=True, blank=True,
+                                               help_text="What one new customer is worth over the relationship")
+    target_customers = models.PositiveIntegerField("New customers wanted", null=True, blank=True,
+                                                   help_text="How many new customers the business wants to win, e.g. this year")
+    place_id = models.CharField("Google place ID", max_length=255, blank=True,
+                                help_text="Filled in by the first crawl that finds the Google listing; clear it to search again")
+    # The last LLM read of the site ({key, identity, ...}, see reputation.read_site): reused while the page text, ICP and
+    # model are unchanged, so the identity the checks work from doesn't shift between runs of the same site.
+    site_read = models.JSONField(null=True, blank=True)
 
     def __str__(self):
         return self.origin
@@ -50,10 +62,75 @@ class Site(models.Model):
     def scan_args(self):
         """CLI flags carrying what the user told us about the business into the crawl."""
         # flag=value so text starting with "-" isn't read as another flag.
-        single = (("--company-name", self.business_name), ("--icp", self.icp), ("--location", self.location), ("--category", self.category))
+        single = (("--company-name", self.business_name), ("--icp", self.icp), ("--location", self.location),
+                  ("--category", self.category), ("--place-id", self.place_id))
         multi = (("--person", self.people), ("--alias", self.aliases), ("--known-profile", self.profiles))
         return ([f"{flag}={value.strip()}" for flag, value in single if value.strip()]
                 + [f"{flag}={value}" for flag, text in multi for value in lines(text)])
+
+    def question_key(self):
+        """The profile fields buyer questions are written for; changing one gets a new question set."""
+        return {"icp": self.icp.strip(), "location": self.location.strip(), "category": self.category.strip()}
+
+    def saved_questions(self):
+        """This profile's stored sets as cli.run's args.saved_questions: {dimension: {"from": run, key: items}}, or None
+        for a set emptied by "new questions", which makes the next crawl write new ones."""
+        return {s.kind: {"from": s.run, QUESTIONS[s.kind]: s.items} if s.items else None
+                for s in self.question_sets.filter(kind__in=QUESTIONS, **self.question_key())}
+
+
+class QuestionSet(models.Model):
+    """The questions a question-based dimension asks for one site and profile. Stored so every crawl asks the same ones,
+    comparable run to run and not paid for again, even after the bundle that wrote them is deleted. Empty items: write a
+    new set on the next crawl. A copy of what was asked is always in the bundle itself."""
+    site = models.ForeignKey(Site, on_delete=models.CASCADE, related_name="question_sets")
+    kind = models.CharField(max_length=40)  # The dimension: llm_reputation, ai_search or answer_coverage.
+    icp = models.TextField("ICP", blank=True)
+    location = models.CharField(max_length=310, blank=True)
+    category = models.CharField(max_length=255, blank=True)
+    items = models.JSONField(default=list, blank=True)  # As in the dimension's JSON: prompts [{"text"}] or questions [{"question", ...}].
+    run = models.CharField(max_length=255, blank=True)  # The crawl that wrote them.
+    created_at = models.DateTimeField(auto_now=True)
+    # ponytail: no unique constraint (a long ICP overflows a Postgres index); one running job per site means one writer.
+
+    class Meta:
+        ordering = ["kind"]
+
+    def __str__(self):
+        return f"{self.site} {self.kind}"
+
+
+def remember(site, bundle):
+    """Store what a crawl bundle settled that later crawls should reuse: the questions each dimension asked (when there's
+    no set yet for the profile it ran with), the site read, and the Google listing's place id once one is found."""
+    config = (load_json(bundle / "manifest.json") or {}).get("config")
+    if not isinstance(config, dict):
+        return
+    for kind in ("llm_reputation", "ai_search"):
+        read = (load_json(bundle / f"technical/{kind}.json") or {}).get("site_read")
+        if isinstance(read, dict) and read.get("identity") and read.get("key"):
+            site.site_read = {**read, "reused_from": read.get("reused_from") or bundle.name}
+            site.save(update_fields=["site_read"])
+            break
+    listing = load_json(bundle / "technical/google_business.json") or {}
+    place_id = listing["listing"].get("place_id") if listing.get("found") and isinstance(listing.get("listing"), dict) else None
+    if isinstance(place_id, str) and place_id and not site.place_id:
+        site.place_id = place_id[:255]
+        site.save(update_fields=["place_id"])
+    key = {field: str(config.get(field) or "").strip() for field in ("icp", "location", "category")}
+    for kind, field in QUESTIONS.items():
+        data = load_json(bundle / f"technical/{kind}.json") or {}
+        if data.get("status") == "UNKNOWN" or not isinstance(data.get(field), list):
+            continue
+        rows = [q for q in data[field] if isinstance(q, dict)]
+        items = ([{"text": q["text"]} for q in rows if isinstance(q.get("text"), str)] if field == "prompts" else
+                 [{k: q.get(k) for k in ("question", "offering", "intent")} for q in rows if isinstance(q.get("question"), str)])
+        found = site.question_sets.filter(kind=kind, **key).first()
+        if items and not found:
+            site.question_sets.create(kind=kind, items=items, run=bundle.name, **key)
+        elif items and not found.items:  # Emptied by "new questions": this crawl wrote the new set.
+            found.items, found.run = items, bundle.name
+            found.save()
 
 
 class Run(models.Model):
@@ -84,6 +161,30 @@ class Run(models.Model):
         return latest(self.dir, "report.pdf")
 
 
+class Snapshot(models.Model):
+    """What "Since last run" compares for one crawl (dashboard.snapshot of each tracked check), kept after the bundle is
+    deleted so the next run still has something to compare with."""
+    site = models.ForeignKey(Site, on_delete=models.CASCADE, related_name="snapshots")
+    name = models.CharField(max_length=255, unique=True)  # The bundle folder, which may be gone.
+    created_at = models.DateTimeField(null=True)
+    checks = models.JSONField(default=dict)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.name
+
+
+def load_json(path):
+    """A bundle JSON file that holds an object, else None (missing, unreadable or tampered)."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def parse_time(value):
     try:
         return datetime.fromisoformat(value) if isinstance(value, str) else None
@@ -92,9 +193,10 @@ def parse_time(value):
 
 
 def sync(root=None):
-    """Upsert a Run per crawl manifest on disk and drop Runs whose folder is gone; the disk is the record."""
+    """Upsert a Run per crawl manifest on disk and drop Runs whose folder is gone; the disk is the record. A new run also
+    gets a Snapshot, which stays after its folder is deleted."""
     # ponytail: rescans every manifest; fine for hundreds of bundles, track mtimes if it gets slow.
-    seen = []
+    seen, snapped = [], set(Snapshot.objects.values_list("name", flat=True))
     for manifest in (root or settings.COMPANYSCAN_OUTPUT).glob("*/manifest.json"):
         try:
             data = json.loads(manifest.read_text(encoding="utf-8"))
@@ -111,6 +213,11 @@ def sync(root=None):
             "status": str(data.get("status") or "")[:20], "pages": pages if isinstance(pages, int) else 0,
             "dimensions": config["dimensions"] if isinstance(config.get("dimensions"), list) else []})
         seen.append(manifest.parent.name)
+        if manifest.parent.name not in snapped:
+            checks = {name: snapshot(name, load_json(manifest.parent / f"technical/{name}.json")) for name in SNAPSHOT}
+            Snapshot.objects.create(site=Site.objects.get(origin=site), name=manifest.parent.name,
+                                    created_at=parse_time(data.get("created_at")),
+                                    checks={name: data for name, data in checks.items() if data})
     Run.objects.exclude(name__in=seen).delete()
 
 

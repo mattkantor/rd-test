@@ -5,11 +5,11 @@ Source: `technical/llm_reputation.json`:
 - `prompts` and `answers`: unbranded buyer questions, each asked several times, with the companies each answer named.
 - `scores`: the leaderboard rank and sentiment computed from those answers, plus `recognized` and `visibility`.
 - `profile`: the identity profile built from the crawl and user input (names, cities, phones, categories, official profiles).
-- `site_read`: one model's INFERRED read of up to 6 crawled pages: name, category, offerings, cities, service area, phones and who the site sells to (`site_icp`), with `evidence` quotes. A quote with `verified: false` was not found in the captured text; don't rely on it. Its values feed `profile` and, when the user gave none, the buyer questions' ICP and location (`audience` source `site`).
+- `site_read`: one model's INFERRED read of up to 6 crawled pages: name, category, offerings, cities, service area, phones and who the site sells to (`site_icp`), with `evidence` quotes. A quote with `verified: false` was not found in the captured text; don't rely on it. `reused_from` names the earlier run that made the read when the page text, ICP and model were unchanged. Its values feed `profile` and, when the user gave none, the buyer questions' ICP and location (`audience` source `site`).
 - `icp_check` (only when the user supplied an ICP): the model's INFERRED judgment of whether the site sells to that ICP: `aligned`, `partial` or `misaligned`, with `site_icp` and a reason.
 - `branded.identity`: the branded answer's stated facts checked against `profile`. `verdict` is `mismatch` (a fact conflicts: likely a namesake), `confirmed` (an independent fact agrees) or `unconfirmed`. `echoed` facts were in the prompt and prove nothing.
 - `audience`: the ICP and location the buyer questions targeted; `source` is `user` (supplied) or `model` (the model's guess).
-- `questions_from`: the earlier run whose buyer questions were reused (prompt `source: previous`), so this run's answers compare question by question with that one; null when the questions were written fresh.
+- `questions_from`: the earlier run that wrote the reused buyer questions (possibly deleted since, when they came from the site's stored set) (prompt `source: previous`), so this run's answers compare question by question with that one; null when the questions were written fresh.
 
 The model answered without web search. Use the citation shape from [analysis-rubric.md](analysis-rubric.md), and give every finding a `business_impact` per [business-impact.md](business-impact.md). Finding IDs use an `R` prefix.
 

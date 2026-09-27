@@ -13,7 +13,7 @@ from companyscan.dimensions.fonts import collect as fonts
 from companyscan.dimensions.meta_ads import collect as meta_ads
 from companyscan.dimensions.reputation import collect as llm_reputation
 from companyscan.dimensions.security import collect as security
-from companyscan.models import Response
+from companyscan.models import Config, Response
 
 ORIGIN = "https://acme.test"
 DISCOVERY = {"origin": ORIGIN}
@@ -207,6 +207,36 @@ class LlmReputationTest(unittest.TestCase):
         self.assertIsNone(fresh["questions_from"])
         self.assertEqual(fresh["prompts"][0]["source"], "generated")
 
+    def test_saved_questions_win_over_earlier_runs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            older = Path(tmp) / "older"
+            (older / "technical").mkdir(parents=True)
+            (older / "technical/ai_search.json").write_text(json.dumps({"status": "COMPLETE", "prompts": [{"text": "q old"}]}))
+            client = SimpleNamespace(previous_runs=[older], config=None,
+                                     saved_questions={"ai_search": {"from": "gone-run", "prompts": [{"text": "q saved"}]},
+                                                      "llm_reputation": None})
+            with patch.object(reputation, "chat_model", side_effect=lambda name, **kw: StubSearch() if name == reputation.SEARCH_MODEL else StubChat()):
+                saved = DIMENSIONS["ai_search"]["collect"](client, DISCOVERY, [], "Acme Dental")
+                fresh = DIMENSIONS["llm_reputation"]["collect"](client, DISCOVERY, [], "Acme Dental")  # None: write new ones.
+        self.assertEqual((saved["prompts"], saved["questions_from"]), ([{"text": "q saved", "source": "previous"}], "gone-run"))
+        self.assertEqual((fresh["prompts"][0]["source"], fresh["questions_from"]), ("generated", None))
+
+    def test_site_read_is_reused_for_the_same_input(self):
+        calls = []
+        llm = SimpleNamespace(with_structured_output=lambda schema: SimpleNamespace(
+            invoke=lambda prompt: calls.append(prompt) or {"category": "dentist", "evidence": []}))
+        pages = [{"url": ORIGIN + "/", "visible_text": "Acme Dental, family dentistry", "classification": {"label": "homepage"}}]
+        memo = {}
+        first = reputation.read_site(llm, "acme.test", pages, None, memo)
+        again = reputation.read_site(llm, "acme.test", pages, None, memo)
+        other = reputation.read_site(llm, "acme.test", pages, "retirees", memo)  # A new ICP is a new prompt.
+        self.assertEqual(len(calls), 2)
+        self.assertEqual((again, again is first), (first, False))
+        self.assertNotEqual(other["key"], first["key"])
+        failing = SimpleNamespace(with_structured_output=lambda schema: SimpleNamespace(invoke=lambda prompt: 1 / 0))
+        reputation.read_site(failing, "acme.test", pages, "families", memo)
+        self.assertEqual(len(memo), 2)  # Failed reads aren't kept.
+
     def test_model_failures_are_unknown(self):
         with patch.object(reputation, "chat_model", side_effect=Exception("missing OPENAI_API_KEY")):
             result = llm_reputation(None, DISCOVERY, [], "Acme Dental")
@@ -398,6 +428,25 @@ class GoogleBusinessTest(unittest.TestCase):
         self.assertEqual((result["status"], result["found"]), ("OBSERVED", False))
         self.assertEqual(result["candidates"][0]["matched_by"], None)
         self.assertNotIn("checks", result)
+
+    def test_a_known_place_id_is_fetched_directly(self):
+        sent = []
+
+        def fake(request, timeout):
+            sent.append(request)
+            if request.full_url.startswith(google_business.DETAILS) and "gone" in request.full_url:
+                raise HTTPError(request.full_url, 404, "Not Found", {}, io.BytesIO(b""))
+            if request.full_url.startswith(google_business.DETAILS):
+                return Reply(json.dumps({**NAMESAKE, "id": "abc/1"}).encode())
+            return Reply(json.dumps({"places": [{**PLACE, "id": "new"}]}).encode())
+        with patch.dict(os.environ, {"GOOGLE_PLACES_API_KEY": "k"}), patch.object(google_business, "urlopen", fake):
+            known = DIMENSIONS["google_business"]["collect"](SimpleNamespace(config=Config(place_id="abc/1")), DISCOVERY, SITE, "Acme Dental")
+            gone = DIMENSIONS["google_business"]["collect"](SimpleNamespace(config=Config(place_id="gone")), DISCOVERY, SITE, "Acme Dental")
+        self.assertEqual(sent[0].full_url, google_business.DETAILS + "abc%2F1")
+        # The stored id is trusted even though the listing no longer ties to the site.
+        self.assertEqual((known["lookup"], known["found"], known["matched_by"], known["listing"]["place_id"]),
+                         ("place_id", True, "place_id", "abc/1"))
+        self.assertEqual((gone["lookup"], gone["matched_by"], gone["listing"]["place_id"]), ("search", "website", "new"))
 
     def test_unknown_without_key_or_on_api_error(self):
         result, sent = self.run_with([], env=False)

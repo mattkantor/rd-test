@@ -12,9 +12,10 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from ..dimensions import DIMENSIONS
+from ..report.scorecard import render_scorecard
 from ..scan.crawler import normalize, origin
 from . import dashboard, tasks
-from .models import Job, Run, Site, sync
+from .models import QUESTIONS, Job, QuestionSet, Run, Site, sync
 
 BUSY = "That site already has a job running."
 
@@ -108,7 +109,10 @@ def render_run(request, name, on_site=False):
     run = Run.objects.filter(name=name).select_related("site").first()
     # Render from root/name, not the resolved path: file_url is relative to the unresolved root (macOS /var symlink).
     view = settings.COMPANYSCAN_OUTPUT / name
-    return render(request, "dashboard.html", {"m": dashboard.load(view, sort, desc), "bundle": view, "job": job,
+    # Stored snapshots, so "Since last run" still finds runs whose bundles were deleted.
+    earlier = [(s.name, s.created_at.isoformat(), s.checks.get) for s in
+               run.site.snapshots.filter(created_at__lt=run.created_at)] if run and run.created_at else None
+    return render(request, "dashboard.html", {"m": dashboard.load(view, sort, desc, earlier), "bundle": view, "job": job,
                                               "percent": job.percent if job else 0, "site": run.site if run else None,
                                               "history": run.site.runs.all() if run else [], "on_site": on_site})
 
@@ -143,7 +147,7 @@ def site_page(request, pk):
 
 # The origin is the site's identity (runs attach to it by URL), so it is set once, by the first crawl, never edited.
 SiteForm = modelform_factory(Site, fields=["business_name", "icp", "category", "people", "aliases", "profiles",
-                                           "city", "state", "country"])
+                                           "city", "state", "country", "customer_ltv", "target_customers", "place_id"])
 
 
 def suggestions(site):
@@ -175,14 +179,38 @@ def site_edit(request, pk):
     if request.method == "POST" and form.is_valid():
         form.save()
         return redirect("site", pk=site.pk) if site.runs.exists() else back()
-    return render(request, "site_edit.html", {"site": site, "form": form,
-                                              "suggested": [form[key].label for key in suggested]})
+    return render(request, "site_edit.html", {"site": site, "form": form, "suggested": [form[key].label for key in suggested],
+                                              "question_sets": site.question_sets.filter(**site.question_key())})
+
+
+@staff_member_required
+@require_POST
+def new_questions(request, pk):
+    """Empty this profile's stored question sets so the next crawl writes, and stores, new ones."""
+    site = get_object_or_404(Site, pk=pk)
+    for kind in QUESTIONS:
+        QuestionSet.objects.update_or_create(site=site, kind=kind, **site.question_key(), defaults={"items": [], "run": ""})
+    return redirect("site_edit", pk=site.pk)
 
 
 @staff_member_required
 def run_dashboard(request, name):
     sync()
     return render_run(request, name)
+
+
+@staff_member_required
+def scorecard(request, name):
+    """Render the run's customer scorecard PDF from its newest analysis and the site's current LTV and goal."""
+    bundle = bundle_path(name)
+    run = Run.objects.filter(name=name).select_related("site").first()
+    if not bundle or not run:
+        raise Http404
+    try:
+        pdf = render_scorecard(bundle, run.site.customer_ltv, run.site.target_customers)
+    except ValueError as exc:  # No report yet, or no Chrome.
+        return back(str(exc))
+    return FileResponse(pdf.open("rb"), content_type="application/pdf", filename=f"{run.site.host}-scorecard.pdf")
 
 
 @staff_member_required

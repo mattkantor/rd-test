@@ -4,7 +4,7 @@ from django.utils.html import format_html
 
 from ..dimensions import DIMENSIONS
 from . import tasks
-from .models import Job, Run, Site, sync
+from .models import Job, QuestionSet, Run, Site, sync
 from .views import crawl_url
 
 admin.site.site_header = admin.site.site_title = "Company Footprint"
@@ -60,3 +60,10 @@ class JobAdmin(admin.ModelAdmin):
     list_filter = ["state", "kind"]
     search_fields = ["site__origin", "run"]
     readonly_fields = [f.name for f in Job._meta.fields if f.name != "state"]  # State stays editable to clear a stuck job.
+
+
+@admin.register(QuestionSet)
+class QuestionSetAdmin(admin.ModelAdmin):
+    """Stored buyer questions; edit items to change what every crawl asks, or empty them to have the next crawl write new ones."""
+    list_display = ["site", "kind", "icp", "location", "category", "run", "created_at"]
+    list_filter = ["kind", "site"]

@@ -21,6 +21,23 @@
       other sites. City, state and country only for a local business. Changes apply to the next crawl or re-crawl.</small>
     <button>Save</button>
   </form>
+  <h2>Buyer questions</h2>
+  <p><small>AI visibility, AI search and answer coverage ask the same stored questions on every crawl, so runs compare
+    question by question. Changing the ICP, category or location starts a new set.</small></p>
+  {% for set in question_sets %}
+    <h3>{{ set.kind }}</h3>
+    {% if set.items %}
+      <p><small>Written by {{ set.run or "an earlier crawl" }}.</small></p>
+      <ol>{% for q in set.items %}<li>{{ q.text or q.question }}</li>{% endfor %}</ol>
+    {% else %}
+      <p><small>New questions will be written on the next crawl.</small></p>
+    {% endif %}
+  {% else %}
+    <p><small>None stored yet. The next crawl with these checks stores the questions it asks.</small></p>
+  {% endfor %}
+  <form method="post" action="/site/{{ site.pk }}/questions">{{ csrf_input }}
+    <button>Write new questions on the next crawl</button>
+  </form>
 </main>
 </body>
 </html>

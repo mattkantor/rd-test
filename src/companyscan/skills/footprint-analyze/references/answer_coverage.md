@@ -3,7 +3,7 @@
 Source: `technical/answer_coverage.json`. It lists high-intent questions a buyer might ask an AI assistant, written by one model from the site's own offerings (`site_read.offerings`), each judged against up to 3 crawled pages:
 - `questions[]`: `question`, `offering`, `intent` (`cost`, `availability`, `suitability`, `comparison`, `process`, `other`), `candidates` (the pages judged), `coverage` (`answered`, `partial`, `missing`; null if the judgment failed, with `error`), `best_url`, `quote` with `verified`, and `gap` (what a page would need to add).
 - `summary`: counts per coverage level.
-- `questions_from`: the earlier run whose questions were reused (so verdicts compare question by question); null when written fresh. With reused questions there's no site read, so `site_read.offerings` is empty.
+- `questions_from`: the earlier run that wrote the reused questions (possibly deleted since, when they came from the site's stored set) (so verdicts compare question by question); null when written fresh. With reused questions there's no site read, so `site_read.offerings` is empty.
 
 Every verdict is INFERRED: one model's reading of the captured text, not proof. A quote with `verified: false` was not found on the page, so don't rely on it and say the answer is unconfirmed. Use the verdicts and citation shape from [analysis-rubric.md](analysis-rubric.md), and give every finding a `business_impact` per [business-impact.md](business-impact.md). Finding IDs use a `Q` prefix. If `status` is `UNKNOWN`, say why and stop.
 
