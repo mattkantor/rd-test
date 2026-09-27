@@ -12,6 +12,8 @@ A deterministic, dependency-free Python CLI that captures public company website
 
 The web UI wraps these steps: a Django app lists sites, and a Huey worker runs crawl, report and re-crawl jobs in the background. Bundles on disk stay the source of truth.
 
+See the [architecture diagram](docs/architecture.html) (open locally in a browser; source: [`docs/architecture.archify.json`](docs/architecture.archify.json)).
+
 ## Setup
 
 Requires Python 3.10+. For the PDF you also need `pandoc` and Chrome or Chromium.

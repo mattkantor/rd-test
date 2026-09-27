@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "companyscan architecture",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    { "id": "staff", "type": "external", "label": "Staff user", "sublabel": "browser", "pos": [40, 300], "size": [130, 64] },
+    { "id": "web", "type": "frontend", "label": "Django web", "sublabel": "web/views.py", "pos": [250, 300], "size": [140, 64] },
+    { "id": "index", "type": "database", "label": "Run / Job index", "sublabel": "SQLite or Postgres", "pos": [250, 130], "size": [140, 64] },
+    { "id": "huey", "type": "messagebus", "label": "Huey worker", "sublabel": "web/tasks.py", "pos": [470, 300], "size": [140, 64] },
+    { "id": "cli", "type": "frontend", "label": "CLI", "sublabel": "companyscan scan", "pos": [690, 130], "size": [140, 64] },
+    { "id": "run", "type": "backend", "label": "Scan pipeline", "sublabel": "cli.py run()", "pos": [690, 300], "size": [140, 64], "tag": "stdlib-only" },
+    { "id": "site", "type": "external", "label": "Target website", "sublabel": "robots + sitemaps", "pos": [690, 470], "size": [140, 64] },
+    { "id": "bundle", "type": "database", "label": "Evidence bundle", "sublabel": "manifest.json", "pos": [910, 300], "size": [140, 64], "tag": "SHA-256" },
+    { "id": "report", "type": "backend", "label": "Report analyzer", "sublabel": "report/analyze.py", "pos": [1130, 300], "size": [150, 64] },
+    { "id": "llm", "type": "cloud", "label": "LLM provider", "sublabel": "LangChain chat_model()", "pos": [1130, 470], "size": [150, 64] },
+    { "id": "pdf", "type": "frontend", "label": "report.md / PDF", "sublabel": "pandoc + Chrome", "pos": [1130, 130], "size": [150, 64] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Web app (optional [web] extra)", "wraps": ["web", "index", "huey"] }
+  ],
+  "connections": [
+    { "id": "staff-web", "from": "staff", "to": "web", "label": "HTTPS", "variant": "emphasis" },
+    { "id": "web-index", "from": "web", "to": "index", "label": "Job rows" },
+    { "id": "web-huey", "from": "web", "to": "huey", "label": "enqueue", "variant": "dashed" },
+    { "id": "huey-run", "from": "huey", "to": "run", "label": "crawl job", "variant": "emphasis" },
+    { "id": "cli-run", "from": "cli", "to": "run" },
+    { "id": "run-site", "from": "run", "to": "site", "label": "bounded crawl", "labelDy": 24 },
+    { "id": "run-bundle", "from": "run", "to": "bundle", "label": "write", "variant": "emphasis" },
+    { "id": "bundle-report", "from": "bundle", "to": "report", "label": "verify", "variant": "emphasis" },
+    { "id": "report-llm", "from": "report", "to": "llm", "label": "JSON mode", "variant": "dashed", "labelDy": 24 },
+    { "id": "report-pdf", "from": "report", "to": "pdf", "label": "render" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Evidence", "items": ["Every subcommand runs the same run()", "Bundles are never overwritten", "Manifest hashes every file"] },
+    { "dot": "emerald", "title": "Web", "items": ["Run is an index rebuilt from manifests", "One running job per site"] },
+    { "dot": "rose", "title": "Interpretation", "items": ["Scanner never interprets", "Model gets no tools; page text is untrusted"] }
+  ]
+}
