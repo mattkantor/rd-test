@@ -56,6 +56,10 @@ class ScorecardTest(unittest.TestCase):
         self.assertIn("Call &lt;us&gt;", page)
         self.assertIn("$633", page)
         self.assertIn("Buyers comparing quotes: They pick a rival.", page)
+        self.assertEqual(page.count("<dt>Why it matters</dt>"), len(card["areas"]))  # Every area, even unscored ones.
+        self.assertIn("Your Google listing is often the first thing", page)
+        self.assertIn("<dt>We'll handle</dt>", page)
+        self.assertIn("What we’ll handle first", page)
 
     def test_no_dollars_without_both_goal_fields(self):
         self.assertIsNone(scorecard.build(ANALYSIS, ltv=2000)["at_risk"])

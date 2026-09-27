@@ -23,6 +23,37 @@ LABELS = {**LABELS, "copy": "Website copy", "technical_marketing": "Technical ma
 LOSS_WORDS = {"leads": "Enquiries you never get", "conversions": "Interested buyers who don't book", "deal_value": "Deals that close smaller",
               "sales_cycle": "Deals that stall", "trust": "Buyers who doubt you", "visibility": "Buyers who never find you",
               "wasted_effort": "Marketing spend that returns nothing"}
+# Why each area matters to a business owner: shown on every area, even one the report says little about, so the
+# customer sees what a weak score means for them. Plain claims about how buyers behave, no statistics.
+WHY = {
+    "website": "Your website is where buyers decide whether to contact you. If it's unclear who you help, what you do "
+               "or how to get started, ready buyers leave for a competitor who makes it obvious.",
+    "copy": "Your words do the selling when you're not in the room. Copy that speaks to your buyer's problem gets "
+            "enquiries; generic copy blends in with every competitor.",
+    "jev_copy": "Buyers are getting good at spotting generic, machine-written copy, and they trust it less. Copy that "
+                "sounds like you makes them believe you.",
+    "technical_marketing": "Tracking, structured data and link previews decide whether you can see what's working, "
+                           "whether search and AI tools understand your pages, and how your links look when shared.",
+    "fonts": "Inconsistent type makes a site feel stitched together. Buyers read that as less established and less "
+             "trustworthy, even if they can't say why.",
+    "security": "Security settings protect your visitors and signal that you're a careful operator. Larger buyers "
+                "increasingly check this before they sign.",
+    "practitioners": "People buy from people. When your experts have clear profiles, buyers, search engines and AI "
+                     "assistants can find them and trust what they say.",
+    "google_business": "Your Google listing is often the first thing a local buyer sees, before your website. Wrong "
+                       "details or a thin listing send them to the business next door.",
+    "meta_ads": "Ads on Facebook and Instagram reach buyers before they start searching. If you're not there, your "
+                "competitors meet them first.",
+    "llm_reputation": "More buyers now ask AI assistants for a shortlist before they search. If the assistant doesn't "
+                      "know you, you're not on the list.",
+    "ai_search": "AI search tools answer buyers' questions with a few recommended names and links. Those names get the "
+                 "calls; everyone else is invisible.",
+    "citation_gap": "AI tools recommend businesses that trusted third-party sites mention. If those pages talk about your "
+                    "competitors and not you, the AI will too.",
+    "answer_coverage": "Buyers ask about cost, timing and fit before they call. If your site doesn't answer, they ask "
+                       "someone else's site, or an AI that quotes a competitor.",
+}
+WHY_DEFAULT = "This is part of how buyers find, judge and choose a business like yours online."
 COUNT_WORDS = {"FAIL": "failed", "WARNING": "warning", "PASS": "passed", "UNKNOWN": "unknown"}
 ESTIMATE = ("Scores are 100 when every finding in an area passes, 50 when they are all warnings, 0 when they all fail. "
             "Value at risk is an estimate: your customer lifetime value times the new customers you want, times the "
@@ -33,8 +64,9 @@ def service():
     """Who fixes it, from COMPANYSCAN_SERVICE_NAME/_PITCH/_CTA. The defaults are draft copy: set your own before sending."""
     return {"name": os.environ.get("COMPANYSCAN_SERVICE_NAME") or "DrGrow",
             "pitch": os.environ.get("COMPANYSCAN_SERVICE_PITCH") or (
-                "DrGrow finds the gaps that keep buyers and AI assistants from choosing you, fixes them in order of what "
-                "they cost you, and re-scans so you can see each score move."),
+                "You don't have to fix any of this yourself. DrGrow does the work for you: we fix the gaps that keep "
+                "buyers and AI assistants from choosing you, in order of what they cost you, and re-scan so you can "
+                "see each score move."),
             "cta": os.environ.get("COMPANYSCAN_SERVICE_CTA") or (
                 "Reply to this email to book a 30-minute walkthrough of your scorecard and a fix plan for the areas "
                 "costing you most.")}
@@ -173,16 +205,17 @@ def overview(card, host):
 
 def area_card(a):
     loss = a["loss"]
-    rows = [(("Why it matters" if a["protects"] else "Costing you"),
-             esc(sentences(loss.get("headline"), loss.get("mechanism"))))] if loss else []
+    rows = [("Why it matters", esc(WHY.get(a["key"], WHY_DEFAULT)))]
+    if loss:
+        rows.append(("What it protects" if a["protects"] else "Costing you", esc(sentences(loss.get("headline"), loss.get("mechanism")))))
     if a["fixes"]:
-        rows.append(("What we'll do", "<ul>" + "".join(f"<li>{esc(clip(f, 220))}</li>" for f in a["fixes"]) + "</ul>"))
+        rows.append(("We'll handle", "<ul>" + "".join(f"<li>{esc(clip(f, 220))}</li>" for f in a["fixes"]) + "</ul>"))
     tally = " · ".join(f"{n} {COUNT_WORDS[k]}{'s' if n != 1 and k == 'WARNING' else ''}" for k, n in a["counts"].items())
     return (f'<article class="area s-{band(a["score"])}"><div class="area-score"><b>{esc(a["score"]) if a["score"] is not None else "—"}</b>'
             + (f'<span class="risk">{money(a["at_risk"])} at risk</span>' if a.get("at_risk") else "")
             + f'</div><div><h3>{esc(a["label"])}</h3>' + (f'<span class="counts">{tally}</span>' if tally else "")
             + f'<p>{esc(clip(a["summary"]))}</p>'
-            + (f'<dl>{"".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in rows)}</dl>' if rows else "") + "</div></article>")
+            + f'<dl>{"".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in rows)}</dl></div></article>')
 
 
 def html(card, host, captured):
@@ -207,7 +240,7 @@ def html(card, host, captured):
             + (f'<div class="chips">{by_loss}</div>' if by_loss else "")
             + f'<section class="page"><h2>By area</h2>{"".join(area_card(a) for a in card["areas"])}</section>'
             f'<section class="fix"><h2>How {esc(offer["name"])} fixes this</h2><p>{esc(offer["pitch"])}</p>'
-            + (f'<h4>Your first steps</h4><ol class="plan">{plan}</ol>' if plan else "")
+            + (f'<h4>What we’ll handle first</h4><ol class="plan">{plan}</ol>' if plan else "")
             + f'<p class="cta">{esc(offer["cta"])}</p></section>'
             f'<p class="note">{esc(ESTIMATE)}</p></body></html>')
 
