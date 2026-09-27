@@ -7,6 +7,7 @@ from ..dimensions.security import HEADERS as SECURITY_HEADERS
 from ..dimensions import ranking
 from ..report.analyze import latest, verify
 from ..scan.artifacts import previous_runs
+from ..scan.measurement import ads_pixel, shows_ads
 
 MISSING, UNREADABLE = "not collected", "unreadable"
 # Site-level reports shown as-is; per-page reports are folded into the page cards and only linked raw.
@@ -531,7 +532,14 @@ def tiles(model, raw):
                         f"named {'family' if families == 1 else 'families'} · most used: {named[0]}" if named else "named families",
                         "warning" if families > FONT_FAMILIES_WARN else "good",
                         "Many families" if families > FONT_FAMILIES_WARN else "Consistent"))
-    t = raw["meta_ads"]
+    t = raw["measurement"]
+    if isinstance(t, dict):  # A yes/no fact, never scored.
+        pixels = ads_pixel(t)
+        out.append(tile("Ad pixels", "#site", "Yes" if pixels["present"] else "No",
+                        ", ".join(pixels["pixels"]) if pixels["present"] else
+                        "none seen; a tag manager may load one" if pixels["tag_manager"] else "no ad pixel from Meta, LinkedIn, Google Ads, TikTok, X, Bing or Pinterest",
+                        "neutral", "Not scored"))
+    t = raw["meta_ads"] if model["meta_ads"] else None
     if isinstance(t, dict):
         out.append(tile("Meta ads", "#meta_ads", num(t.get("ad_count")) if "ad_count" in t else "—",
                         "ads in the Ad Library" if "ad_count" in t else str(t.get("reason") or ""),
@@ -1041,7 +1049,8 @@ def load(bundle, sort="issues", desc=False, earlier=None):
         "sorts": [("issues", "Most issues"), ("path", "URL"), ("type", "Type")] + [(a.lower(), a) for a in AREAS]
                  + [(k, label) for k, (_, label) in COPY.items()] + [("jev", "AI slop (Jev)")],
         "site": site_cards(bundle, raw),
-        "meta_ads": meta_ads_card(raw["meta_ads"]),
+        # None when the site has no ad pixel: the dashboard leaves ads out.
+        "meta_ads": meta_ads_card(raw["meta_ads"]) if shows_ads(raw["measurement"]) else None,
         "reputation": reputation(rep_raw),
         "ai_search": reputation(raw["ai_search"]),
         "answers": answers(raw["answer_coverage"]),

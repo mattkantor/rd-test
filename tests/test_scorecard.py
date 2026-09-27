@@ -61,6 +61,11 @@ class ScorecardTest(unittest.TestCase):
         self.assertIn("<dt>We'll handle</dt>", page)
         self.assertIn("What we’ll handle first", page)
 
+    def test_hidden_areas_are_left_out(self):
+        keys = [a["key"] for a in scorecard.build(ANALYSIS, hide={"meta_ads"})["areas"]]
+        self.assertNotIn("meta_ads", keys)
+        self.assertIn("google_business", keys)
+
     def test_no_dollars_without_both_goal_fields(self):
         self.assertIsNone(scorecard.build(ANALYSIS, ltv=2000)["at_risk"])
         self.assertIsNone(scorecard.build({"findings": []})["overall"])

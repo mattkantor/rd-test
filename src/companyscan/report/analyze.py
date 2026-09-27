@@ -7,6 +7,7 @@ from pathlib import Path
 from ..dimensions import DIMENSIONS
 from ..llm import REPORT_MODEL, chat_model
 from ..scan.copy_scores import chrome
+from ..scan.measurement import shows_ads
 
 # Shipped inside the package so installed copies work.
 SKILL = Path(__file__).resolve().parents[1] / "skills/footprint-analyze/SKILL.md"
@@ -62,7 +63,8 @@ def digest(bundle, budget=BUDGET):
     files, 20% for per-page metadata, and the rest for page text, trimmed evenly."""
     bundle = Path(bundle)
     manifest = load(bundle / "manifest.json") or {}
-    files = [bundle / "company.json", *sorted(bundle.glob("social/*.json")), *sorted(bundle.glob("technical/*.json"))]
+    files = [bundle / "company.json", *sorted(bundle.glob("social/*.json")),
+             *(p for p in sorted(bundle.glob("technical/*.json")) if p.stem not in hidden(bundle))]
     file_cap = min(FILE_CAP, int(budget * 0.4) // (len(files) + 1))
     parts = ["## manifest.json (artifact list omitted)\n" + cap({k: v for k, v in manifest.items() if k != "artifacts"}, file_cap)]
     for path in files:
@@ -91,9 +93,14 @@ def digest(bundle, budget=BUDGET):
     return note + "\n\n".join(parts)
 
 
+def hidden(bundle):
+    """Dimensions left out of the report entirely: ads when the site has no ad pixel."""
+    return set() if shows_ads(load(Path(bundle) / "technical/measurement.json")) else {"meta_ads"}
+
+
 def rubrics(bundle):
     refs = sorted(SKILL.parent.glob("references/*.md"))
-    present = {p.stem for p in Path(bundle).glob("technical/*.json")}
+    present = {p.stem for p in Path(bundle).glob("technical/*.json")} - hidden(bundle)
     keep = [r for r in refs if r.stem not in DIMENSIONS or r.stem in present]
     return "\n\n".join(f"# references/{r.name}\n{r.read_text(encoding='utf-8')}" for r in keep)
 

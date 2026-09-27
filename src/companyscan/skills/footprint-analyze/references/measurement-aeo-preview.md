@@ -10,6 +10,7 @@ Sources: `technical/measurement.json`, `technical/aeo.json`, `technical/schema.j
 - `WARNING`: measurement is present only on some pages (list the gaps); only a tag manager is found, so what it loads is `UNKNOWN`; more than one ID for the same tool (split data); retired Universal Analytics only; ad pixels or session recording with no consent tool detected.
 - `FAIL`: no analytics, tag manager or marketing-automation tracking anywhere in server HTML, across adequate coverage.
 - **Conversion tracking:** note whether the main CTA leaves the site (for example to a booking tool). Clicks and bookings on another domain are invisible unless that tool is connected; mark that `UNKNOWN`, not `FAIL`.
+- **Ad pixels:** `ads_pixel` says whether an ad pixel (Meta, LinkedIn Insight, Google Ads, TikTok, X/Twitter, Microsoft/Bing UET or Pinterest) is on the site (`present`, `pixels`) and whether a tag manager could be loading one out of sight (`tag_manager`). State it as a plain yes/no fact with the pixels named. It is not a finding, gets no verdict, and never counts for or against the site.
 - **Consent:** where ad pixels or session recording are present, note whether a consent tool was detected. Describe this as a privacy-compliance risk to review, not a legal conclusion.
 - **Limit:** detection reads server HTML. Tags added at runtime can exist without being observed, so absence is "not observed in HTML". Recommend checking in a browser before acting on a `FAIL`.
 

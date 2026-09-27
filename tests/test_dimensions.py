@@ -123,6 +123,23 @@ class MetaAdsTest(unittest.TestCase):
         self.assertEqual(result["countries"], ["GB", "DE"])
         self.assertNotIn("secret-token", json.dumps(result))
 
+    def test_no_ad_pixel_skips_the_check(self):
+        from companyscan.scan.measurement import ads_pixel, shows_ads
+        bare = {"tools": [{"tool": "Google tag (gtag.js)", "category": "analytics"}]}
+        gtm = {"tools": [{"tool": "Google Tag Manager", "category": "tag_manager"}]}
+        pixel = {"tools": [{"tool": "LinkedIn Insight Tag", "category": "ads_pixel"}, {"tool": "TikTok Pixel", "category": "ads_pixel"},
+                           {"tool": "Hotjar", "category": "session_recording"}]}
+        self.assertEqual(ads_pixel(pixel), {"present": True, "pixels": ["LinkedIn Insight Tag", "TikTok Pixel"], "tag_manager": False})
+        self.assertEqual([shows_ads(m) for m in (bare, gtm, pixel, None, {"tools": 3})], [False, True, True, True, False])
+        client = FakeClient()
+        client.technical = {"measurement": bare}
+        with patch.dict(os.environ, {"META_ACCESS_TOKEN": "t"}), patch.object(meta_ads_mod, "urlopen") as call:
+            result = meta_ads(client, DISCOVERY, [], "Acme")
+        self.assertEqual((result["status"], result["reason"], call.called), ("SKIPPED", "no_ads_pixel", False))
+        client.technical = {"measurement": gtm}  # A tag manager may load a pixel HTML can't see: still checked.
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(meta_ads(client, DISCOVERY, [], "Acme")["reason"], "no_token")
+
     def test_api_and_network_errors_are_unknown(self):
         http = HTTPError("https://graph.facebook.com", 400, "Bad", {}, io.BytesIO(b'{"error":"bad token"}'))
         for error, reason, detail in ((http, "api_error", "bad token"), (URLError("offline"), "request_failed", "offline")):

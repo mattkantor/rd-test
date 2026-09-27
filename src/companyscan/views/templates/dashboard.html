@@ -123,7 +123,7 @@
   {% endif %}
 
   <nav class="tabs" aria-label="Dashboard sections">
-    <a href="#overview">Overview</a><a href="#pages">Pages</a><a href="#site">Site-wide</a><a href="#meta_ads">Ads</a>
+    <a href="#overview">Overview</a><a href="#pages">Pages</a><a href="#site">Site-wide</a>{% if m.meta_ads %}<a href="#meta_ads">Ads</a>{% endif %}
     <a href="#reputation">AI reputation</a><a href="#ai_search">AI search</a><a href="#answers">Answers</a><a href="#people">People</a><a href="#listing">Google</a><a href="#social">Social</a><a href="#coverage">Coverage</a>
   </nav>
 
@@ -241,9 +241,11 @@
     <div class="info-grid">{% for c in m.site %}{{ info_card(c) }}{% endfor %}</div>
   </section>
 
+  {% if m.meta_ads %}
   <section id="meta_ads" class="tab"><h2>Meta ads {{ tally([m.meta_ads]) }}</h2>
     <div class="info-grid">{{ info_card(m.meta_ads) }}</div>
   </section>
+  {% endif %}
 
   {# The same layout for the training-data check and the web-search one; only ai_search has cited sources. #}
   {% for tab, r, title, icon in (("reputation", m.reputation, "AI reputation", "sparkle"), ("ai_search", m.ai_search, "AI search", "globe")) %}

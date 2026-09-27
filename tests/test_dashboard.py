@@ -58,7 +58,8 @@ def full_bundle(root, name="acme", reputation=SCORED):
         write(d, "technical/robots.json", {"status": 200, "policy_status": "OBSERVED", "text": "User-agent: *\nAllow: /"}),
         write(d, "technical/aeo.json", {"pages_checked": 3, "pages_with_json_ld": 2, "types": {"Dentist": 2},
                                         "issue_summary": [{"severity": "warning", "code": "missing_recommended", "pages": 2}]}),
-        write(d, "technical/measurement.json", {"tools": [{"tool": "Google tag", "category": "analytics", "ids": ["G-1"]}],
+        write(d, "technical/measurement.json", {"tools": [{"tool": "Google tag", "category": "analytics", "ids": ["G-1"]},
+                                                          {"tool": "Meta Pixel", "category": "ads_pixel", "ids": ["1"]}],
                                                 "has_measurement": True, "has_consent_tool": False}),
         write(d, "technical/social-preview.json", {"pages_checked": 3, "issue_summary": [], "pages": [
             {"url": "https://acme.test/", "issues": []},
@@ -196,7 +197,7 @@ class LoadTest(unittest.TestCase):
         self.assertEqual(m["report"]["md"].name, "report.md")
         tiles = {t["title"]: (t["value"], t["sub"], t["level"], t["status"], t["meter"]) for t in m["tiles"]}
         self.assertEqual(list(tiles), ["Pages crawled", "Report", "Accessibility (WCAG)", "Analytics", "SEO basics", "AEO structured data",
-                                       "Social previews", "Security headers", "Fonts", "AI reputation"])  # No Meta ads: not collected.
+                                       "Social previews", "Security headers", "Fonts", "Ad pixels", "AI reputation"])  # No Meta ads: not collected.
         self.assertEqual(tiles["Pages crawled"], (3, "of 50 limit · 1 skipped", "warning", "PARTIAL", {"pct": 6}))
         self.assertEqual((tiles["Report"][0], tiles["Report"][2], tiles["Report"][3]), (1, "warning", "1 WARNING"))
         self.assertEqual(tiles["AEO structured data"], ("67%", "pages with JSON-LD · 1 issue type", "warning", "1 issue type", {"pct": 67}))
@@ -479,6 +480,16 @@ class DashboardPageTest(WebCase):  # Skipped outside python manage.py test.
         self.assertNotIn("<script>r</script>", page)
         self.assertNotIn('href="javascript:', page)
         self.assertIn("Google listing phone differs from the website", page)
+
+    def test_no_ad_pixel_hides_ads(self):
+        d = full_bundle(self.root)
+        write(d, "technical/meta_ads.json", {"status": "SKIPPED", "reason": "no_ads_pixel"})
+        self.assertIn('href="#meta_ads"', self.client.get("/run/acme").text)  # The fixture site has a Meta Pixel.
+        write(d, "technical/measurement.json", {"tools": [{"tool": "Google tag", "category": "analytics"}], "has_measurement": True})
+        page = self.client.get("/run/acme").text
+        self.assertNotIn('href="#meta_ads"', page)
+        self.assertNotIn('id="meta_ads"', page)
+        self.assertIn("no ad pixel from Meta, LinkedIn", page)
 
     def test_renders_since_last_run(self):
         d = full_bundle(self.root)

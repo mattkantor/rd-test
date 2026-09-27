@@ -42,6 +42,18 @@ class VerifyTest(unittest.TestCase):
 
 
 class LatestTest(unittest.TestCase):
+    def test_ads_left_out_without_an_ad_pixel(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            files = {"technical/meta_ads.json": json.dumps({"status": "SKIPPED"}),
+                     "technical/measurement.json": json.dumps({"tools": [{"tool": "Plausible", "category": "analytics"}]})}
+            bundle = make_bundle(tmp, files)
+            self.assertEqual(analyze_mod.hidden(bundle), {"meta_ads"})
+            self.assertNotIn("meta_ads", analyze_mod.digest(bundle))
+            self.assertNotIn("references/meta_ads.md", analyze_mod.rubrics(bundle))
+            (bundle / "technical/measurement.json").write_text(json.dumps({"tools": [{"tool": "Google Ads", "category": "ads_pixel"}]}))
+            self.assertIn("technical/meta_ads.json", analyze_mod.digest(bundle))
+            self.assertIn("references/meta_ads.md", analyze_mod.rubrics(bundle))
+
     def test_newest_report_or_none(self):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertIsNone(latest(tmp, "report.md"))

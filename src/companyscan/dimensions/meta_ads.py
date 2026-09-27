@@ -7,6 +7,7 @@ from urllib.parse import urlencode
 from urllib.request import urlopen
 
 from ..models import now
+from ..scan.measurement import shows_ads
 
 
 def collect(client, discovery, pages, brand):
@@ -14,6 +15,10 @@ def collect(client, discovery, pages, brand):
     countries = os.environ.get("META_AD_COUNTRIES", "US").split(",")
     base = {"search_terms": brand, "countries": countries, "retrieved_at": now(),
             "limitation": "Meta's Ad Library API returns all ad types only for EU/UK delivery; elsewhere only political/issue ads. A keyword search can match other advertisers."}
+    # cli.run collects technical reports (measurement) before dimensions.
+    if not shows_ads((getattr(client, "technical", None) or {}).get("measurement")):
+        return {**base, "status": "SKIPPED", "reason": "no_ads_pixel",
+                "note": "No ad pixel (Meta, LinkedIn, Google Ads, TikTok, X, Bing or Pinterest) on the site, so ads weren't checked."}
     if not token:
         return {**base, "status": "UNKNOWN", "reason": "no_token", "note": "Set META_ACCESS_TOKEN to enable."}
     query = urlencode({"search_terms": brand, "ad_reached_countries": json.dumps(countries), "ad_type": "ALL",

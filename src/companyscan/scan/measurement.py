@@ -14,6 +14,7 @@ SIGNATURES = [
     ("X (Twitter) Pixel", "ads_pixel", r"static\.ads-twitter\.com/uwt\.js|twq\(\s*['\"]config", None),
     ("TikTok Pixel", "ads_pixel", r"analytics\.tiktok\.com/i18n/pixel", None),
     ("Microsoft UET (Bing Ads)", "ads_pixel", r"bat\.bing\.com/bat\.js", None),
+    ("Pinterest Tag", "ads_pixel", r"s\.pinimg\.com/ct/core\.js|pintrk\(\s*['\"]load['\"]", r"pintrk\(\s*['\"]load['\"]\s*,\s*['\"](\d{6,})"),
     ("Microsoft Clarity", "session_recording", r"clarity\.ms/tag/|\(c,l,a,r,i,t,y\)", r"clarity\.ms/tag/([a-z0-9]{6,})"),
     ("Hotjar", "session_recording", r"static\.hotjar\.com|hotjar\.com/c/hotjar-", r"hjid\s*:\s*(\d{4,})"),
     ("HubSpot", "marketing_automation", r"js(?:-na1)?\.hs-scripts\.com|js\.hs-analytics\.net", r"hs-scripts\.com/(\d{4,})\.js"),
@@ -35,6 +36,29 @@ SIGNATURES = [
     ("iubenda", "consent", r"cdn\.iubenda\.com", None),
     ("Osano", "consent", r"cmp\.osano\.com", None),
 ]
+
+
+# Pixels that mean the business runs (or has run) paid ads worth reporting on.
+ADS_PIXELS = ("Meta Pixel", "LinkedIn Insight Tag", "Google Ads", "TikTok Pixel", "X (Twitter) Pixel",
+              "Microsoft UET (Bing Ads)", "Pinterest Tag")
+
+
+def ads_pixel(summary):
+    """Yes/no for ad pixels: {present, pixels, tag_manager}. A plain fact, not a verdict or part of any score. Reads the
+    tools list, so it works on measurement summaries written before this field existed."""
+    tools = summary.get("tools") if isinstance(summary, dict) else None
+    tools = [t for t in tools if isinstance(t, dict)] if isinstance(tools, list) else []
+    pixels = sorted({t["tool"] for t in tools if t.get("tool") in ADS_PIXELS})
+    return {"present": bool(pixels), "pixels": pixels, "tag_manager": any(t.get("category") == "tag_manager" for t in tools)}
+
+
+def shows_ads(summary):
+    """Whether ads info belongs in the report, dashboard and scorecard: an ad pixel was seen, or a tag manager could be
+    loading one where server HTML can't see it. No measurement summary at all: keep ads (nothing to go on)."""
+    if not isinstance(summary, dict):
+        return True
+    found = ads_pixel(summary)
+    return found["present"] or found["tag_manager"]
 
 
 def detect(srcs, inline):
@@ -70,7 +94,7 @@ def summarize(pages):
              "missing_on": [p["url"] for p in ok if p["url"] not in r["pages"]][:50], "pages": r["pages"][:50]}
             for r in tools.values()]
     cats = {r["category"] for r in rows}
-    return {"tools": rows, "pages_checked": len(ok),
+    return {"tools": rows, "pages_checked": len(ok), "ads_pixel": ads_pixel({"tools": rows}),
             "has_measurement": bool(cats & {"analytics", "tag_manager", "marketing_automation"}),
             "has_consent_tool": "consent" in cats,
             "pages_without_any_measurement_count": len(bare := [p["url"] for p in ok if not any(t["category"] in {"analytics", "tag_manager", "marketing_automation"} for t in p["measurement"])]),

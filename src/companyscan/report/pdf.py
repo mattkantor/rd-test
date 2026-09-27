@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlparse
 
-from .analyze import latest
+from .analyze import hidden, latest
 
 CSS = Path(__file__).resolve().parents[1] / "views" / "report" / "report.css"
 CHROMES = [os.environ.get("CHROME", ""), "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
@@ -43,6 +43,8 @@ def render_pdf(bundle):
     title = next((line[2:].strip() for line in md.read_text(encoding="utf-8").splitlines() if line.startswith("# ")), "Report")
     html, pdf = md.with_suffix(".html"), md.with_suffix(".pdf")
     analysis = load(md.parent / "analysis.json")
+    if analysis and "meta_ads" in hidden(bundle):  # Older analyses may still carry an ads section.
+        analysis.pop("meta_ads", None)
     try:
         subprocess.run(["pandoc", str(md), "-s", "--embed-resources", "--css", str(CSS), "--metadata", f"pagetitle={title}",
                         *(["--shift-heading-level-by=1"] if analysis else []), "-o", str(html)],

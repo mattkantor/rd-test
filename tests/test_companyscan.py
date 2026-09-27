@@ -149,7 +149,8 @@ class ScannerTests(unittest.TestCase):
             self.assertNotIn("strict-transport-security", home["missing_headers"])  # HSTS only applies over HTTPS.
             self.assertIn("content-security-policy", home["missing_headers"])
             ads = json.loads((root / "technical/meta_ads.json").read_text())
-            self.assertEqual((ads["status"], ads["reason"], ads["search_terms"]), ("UNKNOWN", "no_token", "Acme Dental"))
+            # The fixture site has no ad pixel, so ads are skipped before the token is even needed.
+            self.assertEqual((ads["status"], ads["reason"], ads["search_terms"]), ("SKIPPED", "no_ads_pixel", "Acme Dental"))
 
     def test_run_reports_each_step_and_page(self):
         calls = []
@@ -221,6 +222,10 @@ class ScannerTests(unittest.TestCase):
         gt = {t["tool"]: t for t in extract('<script src="https://www.googletagmanager.com/gtag/js?id=GT-NBBRPB6R"></script>', "https://e.com/")["measurement"]}
         self.assertEqual(gt["Google tag (gtag.js)"]["ids"], ["GT-NBBRPB6R"])
         self.assertEqual(tools["Meta Pixel"]["ids"], ["1234567890"])
+        pins = extract('<script src="https://s.pinimg.com/ct/core.js"></script><script>pintrk("load", "2612345678901");</script>'
+                       '<script src="https://analytics.tiktok.com/i18n/pixel/events.js"></script>', "https://e.com/")["measurement"]
+        pins = {t["tool"]: t for t in pins}
+        self.assertEqual((pins["Pinterest Tag"]["ids"], pins["TikTok Pixel"]["category"]), (["2612345678901"], "ads_pixel"))
         self.assertIn("Cookiebot", tools)
         self.assertNotIn("Hotjar", tools)
         self.assertEqual(data["social_meta"]["twitter:card"], "summary_large_image")

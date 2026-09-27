@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 from urllib.parse import urlparse
 
-from .analyze import latest
+from .analyze import hidden, latest
 from .pdf import CSS, LABELS, chrome_path, esc, items, level, load, print_pdf
 
 WEIGHT = {"PASS": 1, "LOW": 1, "INFO": 1, "WARNING": 0.5, "MEDIUM": 0.5, "FAIL": 0, "HIGH": 0}
@@ -124,9 +124,10 @@ def first_issue(findings):
     return sentences(worst[0].get("title"), worst[0].get("interpretation")) if worst else ""
 
 
-def build(analysis, ltv=None, customers=None):
-    """The scorecard as data: overall score, areas, and dollars when ltv and customers are both given."""
-    rows = areas(analysis)
+def build(analysis, ltv=None, customers=None, hide=()):
+    """The scorecard as data: overall score, areas, and dollars when ltv and customers are both given. hide: area keys
+    to leave out (analyze.hidden: ads when the site has no ad pixel)."""
+    rows = [a for a in areas(analysis) if a["key"] not in hide]
     scored = [a for a in rows if a["score"] is not None]
     overall = round(sum(a["score"] for a in scored) / len(scored)) if scored else None
     card = {"overall": overall, "areas": rows, "goal": None, "at_risk": None}
@@ -258,6 +259,6 @@ def render_scorecard(bundle, ltv=None, customers=None):
     manifest = load(bundle / "manifest.json") or {}
     host = urlparse(str(manifest.get("input_url") or "")).hostname or bundle.name
     page, pdf = path.parent / "scorecard.html", path.parent / "scorecard.pdf"
-    page.write_text(html(build(analysis, ltv, customers), host, str(manifest.get("created_at") or "")), encoding="utf-8")
+    page.write_text(html(build(analysis, ltv, customers, hidden(bundle)), host, str(manifest.get("created_at") or "")), encoding="utf-8")
     print_pdf(chrome, page, pdf)
     return pdf
