@@ -53,6 +53,8 @@ WHY = {
     "answer_coverage": "Buyers ask about cost, timing and fit before they call. If your site doesn't answer, they ask "
                        "someone else's site, or an AI that quotes a competitor.",
 }
+WHY["analytics"] = ("Analytics is how you know who visits, where they came from and what makes them get in touch. "
+                    "Without it you can't tell which marketing works, so every decision is a guess.")
 WHY_DEFAULT = "This is part of how buyers find, judge and choose a business like yours online."
 COUNT_WORDS = {"FAIL": "failed", "WARNING": "warning", "PASS": "passed", "UNKNOWN": "unknown"}
 ESTIMATE = ("Scores are 100 when every finding in an area passes, 50 when they are all warnings, 0 when they all fail. "
@@ -124,10 +126,43 @@ def first_issue(findings):
     return sentences(worst[0].get("title"), worst[0].get("interpretation")) if worst else ""
 
 
-def build(analysis, ltv=None, customers=None, hide=()):
+def analytics_area(measurement):
+    """The Analytics area, scored from the scan's technical/measurement.json rather than the report: the share of pages
+    with an analytics tool, tag manager or marketing-automation tag. None at all is a high risk: the business can't see
+    its visitors. Server HTML only, so a tag added at runtime without a tag manager would be missed."""
+    if not isinstance(measurement, dict) or not isinstance(measurement.get("pages_checked"), int) or measurement["pages_checked"] < 1:
+        return None
+    checked, bare = measurement["pages_checked"], measurement.get("pages_without_any_measurement_count")
+    bare = bare if isinstance(bare, int) and 0 <= bare <= checked else 0
+    tools = sorted({str(t.get("tool")) for t in measurement.get("tools") or [] if isinstance(t, dict)
+                    and t.get("category") in ("analytics", "tag_manager", "marketing_automation")})
+    area = {"key": "analytics", "label": "Analytics", "findings": [], "protects": False, "high_risk": False}
+    if not measurement.get("has_measurement"):
+        return {**area, "score": 0, "counts": {"FAIL": 1}, "high_risk": True,
+                "summary": f"No analytics or tag manager was found on any of the {checked} pages checked.",
+                "loss": {"headline": "You can't see who visits or what brings them in",
+                         "mechanism": "Without analytics you can't tell which pages, channels or ads bring customers, so "
+                                      "spend goes to guesses and problems go unnoticed until sales drop."},
+                "fixes": ["Set up analytics on every page and track enquiries and bookings as conversions"]}
+    if bare:
+        return {**area, "score": round((checked - bare) / checked * 100), "counts": {"WARNING": 1},
+                "summary": f"{', '.join(tools)} found, but {bare} of {checked} pages {'has' if bare == 1 else 'have'} no analytics tag.",
+                "loss": {"headline": "Part of your site is invisible to your reporting",
+                         "mechanism": "Visits to untagged pages don't show up, so your numbers undercount what's happening."},
+                "fixes": ["Add the analytics tag to the pages missing it and check conversions are recorded"]}
+    return {**area, "score": 100, "counts": {"PASS": 1},
+            "summary": f"{', '.join(tools)} {'runs' if len(tools) == 1 else 'run'} on every page checked.",
+            "loss": {}, "fixes": []}
+
+
+def build(analysis, ltv=None, customers=None, hide=(), measurement=None):
     """The scorecard as data: overall score, areas, and dollars when ltv and customers are both given. hide: area keys
-    to leave out (analyze.hidden: ads when the site has no ad pixel)."""
+    to leave out (analyze.hidden: ads when the site has no ad pixel). measurement: technical/measurement.json, which
+    adds the Analytics area (first when there is none at all)."""
     rows = [a for a in areas(analysis) if a["key"] not in hide]
+    tracked = analytics_area(measurement)
+    if tracked:
+        rows.insert(0 if tracked["high_risk"] else len(rows), tracked)
     scored = [a for a in rows if a["score"] is not None]
     overall = round(sum(a["score"] for a in scored) / len(scored)) if scored else None
     card = {"overall": overall, "areas": rows, "goal": None, "at_risk": None}
@@ -140,6 +175,8 @@ def build(analysis, ltv=None, customers=None, hide=()):
         card["monthly"] = round(card["at_risk"] / 12)
     plan = recommendations(analysis)
     for a in rows:
+        if a["key"] == "analytics":  # Scored from the scan; its loss and fix are already set.
+            continue
         ids = {str(f.get("id")) for f in a["findings"]}
         a["fixes"] = [text for text, fixes in plan if ids & fixes][:2]
         worst = sorted((f for f in a["findings"] if impact(f).get("headline")), key=lambda f: WEIGHT.get(level(f.get("severity")), 2))
@@ -151,6 +188,8 @@ def build(analysis, ltv=None, customers=None, hide=()):
     ranked = [pool[str(i)] for i in summary.get("ranked") or [] if str(i) in pool and pool[str(i)] in open_] or \
         sorted(open_, key=lambda f: ({"high": 0, "medium": 1, "low": 2}.get(str(impact(f).get("magnitude")).lower(), 3)))
     card["losses"] = [impact(f) for f in ranked[:3]]
+    if tracked and tracked["high_risk"]:  # Flying blind leads the list.
+        card["losses"] = [{**tracked["loss"], "loss_type": "wasted_effort"}] + card["losses"][:2]
     types = {}
     for f in open_:
         word = LOSS_WORDS.get(str(impact(f).get("loss_type")))
@@ -194,6 +233,9 @@ def overview(card, host):
     if not scored:
         return f"The analysis of {host} had no areas with enough evidence to score."
     text = ""
+    if any(a.get("high_risk") for a in card["areas"]):
+        text += (f"High risk: {host} has no analytics, so there's no way to see who visits, where they come from or "
+                 "what makes them get in touch. ")
     if card["at_risk"] is not None:
         text += (f"Right now, gaps in how {host} shows up to buyers online put an estimated {money(card['at_risk'])} of your "
                  f"{money(card['goal'])} growth goal at risk: about {money(card['monthly'])} for every month they stay open. ")
@@ -214,7 +256,8 @@ def area_card(a):
     tally = " · ".join(f"{n} {COUNT_WORDS[k]}{'s' if n != 1 and k == 'WARNING' else ''}" for k, n in a["counts"].items())
     return (f'<article class="area s-{band(a["score"])}"><div class="area-score"><b>{esc(a["score"]) if a["score"] is not None else "—"}</b>'
             + (f'<span class="risk">{money(a["at_risk"])} at risk</span>' if a.get("at_risk") else "")
-            + f'</div><div><h3>{esc(a["label"])}</h3>' + (f'<span class="counts">{tally}</span>' if tally else "")
+            + f'</div><div><h3>{esc(a["label"])}' + (' <span class="flag">High risk</span>' if a.get("high_risk") else "")
+            + '</h3>' + (f'<span class="counts">{tally}</span>' if tally else "")
             + f'<p>{esc(clip(a["summary"]))}</p>'
             + f'<dl>{"".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in rows)}</dl></div></article>')
 
@@ -259,6 +302,7 @@ def render_scorecard(bundle, ltv=None, customers=None):
     manifest = load(bundle / "manifest.json") or {}
     host = urlparse(str(manifest.get("input_url") or "")).hostname or bundle.name
     page, pdf = path.parent / "scorecard.html", path.parent / "scorecard.pdf"
-    page.write_text(html(build(analysis, ltv, customers, hidden(bundle)), host, str(manifest.get("created_at") or "")), encoding="utf-8")
+    card = build(analysis, ltv, customers, hidden(bundle), load(bundle / "technical/measurement.json"))
+    page.write_text(html(card, host, str(manifest.get("created_at") or "")), encoding="utf-8")
     print_pdf(chrome, page, pdf)
     return pdf

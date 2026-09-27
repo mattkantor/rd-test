@@ -66,6 +66,23 @@ class ScorecardTest(unittest.TestCase):
         self.assertNotIn("meta_ads", keys)
         self.assertIn("google_business", keys)
 
+    def test_no_analytics_is_a_scored_high_risk(self):
+        none = {"pages_checked": 12, "has_measurement": False, "pages_without_any_measurement_count": 12, "tools": []}
+        card = scorecard.build(ANALYSIS, 2000, 10, measurement=none)
+        first = card["areas"][0]
+        self.assertEqual((first["key"], first["score"], first["high_risk"], first["counts"]), ("analytics", 0, True, {"FAIL": 1}))
+        self.assertEqual(card["losses"][0]["headline"], "You can't see who visits or what brings them in")
+        self.assertEqual(card["overall"], 50)  # (0 + 50 + 25 + 75 + 100) / 5.
+        page = scorecard.html(card, "acme.test", "")
+        self.assertIn('Analytics <span class="flag">High risk</span>', page)
+        self.assertIn("High risk: acme.test has no analytics", page)
+        some = {"pages_checked": 4, "has_measurement": True, "pages_without_any_measurement_count": 1,
+                "tools": [{"tool": "Plausible", "category": "analytics"}, {"tool": "Meta Pixel", "category": "ads_pixel"}]}
+        area = scorecard.build(ANALYSIS, measurement=some)["areas"][-1]
+        self.assertEqual((area["score"], area["high_risk"], area["summary"]),
+                         (75, False, "Plausible found, but 1 of 4 pages has no analytics tag."))
+        self.assertNotIn("analytics", [a["key"] for a in scorecard.build(ANALYSIS, measurement={"tools": 3})["areas"]])
+
     def test_no_dollars_without_both_goal_fields(self):
         self.assertIsNone(scorecard.build(ANALYSIS, ltv=2000)["at_risk"])
         self.assertIsNone(scorecard.build({"findings": []})["overall"])

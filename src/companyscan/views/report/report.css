@@ -213,3 +213,5 @@ tbody tr:nth-child(even) td { background: #fafbfc; }
 .fix h2 { margin-top: 0; }
 .cta { margin: 4mm 0 0; padding: 3mm 4mm; font-weight: 700; color: #fff; background: var(--accent); border-radius: 1.5mm; }
 .note { font-size: 8pt; color: var(--muted); }
+.flag { margin-left: 2mm; padding: 0.3mm 1.6mm; border-radius: 1mm; font-size: 7.5pt; font-weight: 700; letter-spacing: 0.05em;
+        text-transform: uppercase; vertical-align: middle; color: #fff; background: var(--fail); }
