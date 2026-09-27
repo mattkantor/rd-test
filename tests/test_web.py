@@ -121,6 +121,11 @@ class WebTests(WebCase):
         args = parser().parse_args(["scan", site.origin, *site.scan_args()])
         self.assertEqual((args.company_name, args.icp, args.location), ("Joe's", "-takeout families", "Austin, TX"))
         self.assertEqual(Site(origin="https://x.test").scan_args(), [])
+        site = Site(origin="https://joes.test", category="pizzeria", people="Joe Roe\n\n Ann Lee ", aliases="Joe's Pizza",
+                    profiles="https://www.yelp.com/biz/joes")
+        args = parser().parse_args(["scan", site.origin, *site.scan_args()])
+        self.assertEqual((args.category, args.person, args.alias, args.known_profile),
+                         ("pizzeria", ["Joe Roe", "Ann Lee"], ["Joe's Pizza"], ["https://www.yelp.com/biz/joes"]))
 
     def test_report_job_runs_analysis_then_pdf(self):
         d = bundle(self.root, "acme", "https://acme.test/", "2026-01-01T00:00:00+00:00")
@@ -204,6 +209,24 @@ class WebTests(WebCase):
             self.assertEqual(self.client.post("/report", {"dir": "acme-old", "return_to": "site"})["location"], f"/site/{pk}")
         self.assertEqual(self.client.get("/site/999").status_code, 404)
 
+    def test_edit_page_prefills_blank_fingerprint_fields_from_the_latest_crawl(self):
+        d = bundle(self.root, "acme", "https://acme.test/", "2026-01-01T00:00:00+00:00")
+        (d / "technical").mkdir()
+        (d / "technical/ai_search.json").write_text(json.dumps({
+            "profile": {"names": ["Acme Dental", "Acme <b>Kids</b>"], "people": ["Jane Doe"], "categories": ["Dentist"],
+                        "profiles": ["https://www.linkedin.com/company/acme"]},
+            "site_read": {"identity": {"category": "pediatric dental practice"}}}))
+        self.client.get("/")
+        site = Site.objects.get()
+        site.people = "Sam Roe"  # Already set: left alone.
+        site.save()
+        page = self.client.get(f"/site/{site.pk}/edit").content.decode()
+        self.assertIn("pediatric dental practice", page)
+        self.assertIn("Acme &lt;b&gt;Kids&lt;/b&gt;</textarea>", page)  # Escaped; the main name isn't an alias.
+        self.assertNotIn("Jane Doe", page)
+        self.assertIn("https://www.linkedin.com/company/acme</textarea>", page)
+        self.assertIn("check before saving:</strong> Category, Other names, Official profiles.", page)
+
     def test_edit_site_profile_but_not_its_url(self):
         bundle(self.root, "acme", "https://acme.test/", "2026-01-01T00:00:00+00:00")
         self.client.get("/")
@@ -218,6 +241,10 @@ class WebTests(WebCase):
         site.refresh_from_db()
         self.assertEqual((site.origin, site.business_name, site.location), ("https://acme.test", "Acme Dental", "Austin, TX"))
         self.assertContains(self.client.get(f"/site/{site.pk}"), "<strong>Acme Dental</strong>")
+        bad = self.client.post(f"/site/{site.pk}/edit", {"business_name": "Acme Dental", "profiles": "not a url"})
+        self.assertEqual(bad.status_code, 200)  # Re-rendered with the error, not saved.
+        site.refresh_from_db()
+        self.assertEqual(site.profiles, "")
         self.assertEqual(self.client.get("/site/999/edit").status_code, 404)
         self.client.force_login(User.objects.create_superuser("admin"))
         self.assertNotContains(self.client.get(f"/admin/web/site/{site.pk}/change/"), 'name="origin"')

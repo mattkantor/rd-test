@@ -43,12 +43,14 @@ def is_org(obj):
     return bool(types & ORG_TYPES) or (bool(types) and "name" in obj and "address" in obj)
 
 
-def build(domain, pages=(), company_name=None, location=None, site=None):
-    """Identity profile: names, cities, phones, categories and official profiles. User-supplied values come first, then
-    JSON-LD, then site (the LLM's read of the page text: reputation.read_site's identity), which fills gaps on sites
+def build(domain, pages=(), company_name=None, location=None, site=None, category=None, aliases=(), people=(), profiles=()):
+    """Identity profile: names, people, cities, phones, categories and official profiles. User-supplied values come first,
+    then JSON-LD, then site (the LLM's read of the page text: reputation.read_site's identity), which fills gaps on sites
     without structured data."""
-    profile = {"domain": host(domain), "names": [], "cities": [], "phones": [], "categories": [], "profiles": []}
-    add(profile["names"], company_name)
+    profile = {"domain": host(domain), "names": [], "people": [], "cities": [], "phones": [], "categories": [], "profiles": []}
+    for key, values in (("names", [company_name, *aliases]), ("people", people), ("categories", [category]), ("profiles", profiles)):
+        for value in values:
+            add(profile[key], value)
     if isinstance(location, str):
         add(profile["cities"], location.split(",")[0])  # "Austin, TX, USA" -> Austin.
     for page in pages:
@@ -68,11 +70,13 @@ def build(domain, pages=(), company_name=None, location=None, site=None):
         for phone in page.get("telephone_numbers", []):
             add(profile["phones"], digits(phone))
     site = site if isinstance(site, dict) else {}
-    for key, field in (("names", "company_name"), ("names", "other_names"), ("cities", "cities"),
+    for key, field in (("names", "company_name"), ("names", "other_names"), ("people", "people"), ("cities", "cities"),
                        ("phones", "phones"), ("categories", "category")):
         for value in as_list(site.get(field)):
             add(profile[key], digits(value) if key == "phones" else value)
-    profile["profiles"] = [p["url"] for p in discover_profiles(pages) if p["official_confidence"] >= 0.75]
+    for found in discover_profiles(pages):
+        if found["official_confidence"] >= 0.75:
+            add(profile["profiles"], found["url"])
     return profile
 
 

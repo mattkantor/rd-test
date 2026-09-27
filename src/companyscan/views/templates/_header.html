@@ -1,0 +1,19 @@
+{# Brand bar shared by every page. Alerts and account are demo placeholders (href="#") until those features exist. #}
+{% set here = request.path if request is defined else "" %}
+<header class="brandbar">
+  <div class="brandbar-in">
+    <a class="mark" href="/" aria-label="DrGrow home">Dr<span class="plus">+</span>Grow</a>
+    <nav aria-label="Main">
+      <a href="/"{% if here == "/" or here.startswith(("/site", "/run")) %} aria-current="page"{% endif %}>Sites</a>
+      <a href="/admin/">Admin</a>
+    </nav>
+    <div class="brandbar-icons">
+      <a class="icon-btn" href="#" aria-label="Alerts" title="Alerts">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z M10 20.5a2 2 0 0 0 4 0"/></svg>
+      </a>
+      <a class="icon-btn" href="#" aria-label="Account" title="Account">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20c1.2-3.6 4-5.5 7.5-5.5s6.3 1.9 7.5 5.5"/></svg>
+      </a>
+    </div>
+  </div>
+</header>

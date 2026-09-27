@@ -27,7 +27,17 @@ class BuildTest(unittest.TestCase):
 
     def test_bare_site_has_only_the_domain(self):
         profile = build("acme.test")
-        self.assertEqual(profile, {"domain": "acme.test", "names": [], "cities": [], "phones": [], "categories": [], "profiles": []})
+        self.assertEqual(profile, {"domain": "acme.test", "names": [], "people": [], "cities": [], "phones": [], "categories": [],
+                                   "profiles": []})
+
+    def test_user_fingerprint_comes_first_and_dedupes(self):
+        profile = build("acme.test", [page(DENTIST)], company_name="Acme Dental", category="Pediatric dentist",
+                        aliases=["acme", "Smile Co"], people=["Dr. Jane Doe"], profiles=["https://www.linkedin.com/company/acme-dental"],
+                        site={"people": ["dr. jane doe", "Sam Roe"]})
+        self.assertEqual(profile["names"], ["Acme Dental", "acme", "Smile Co"])  # JSON-LD "Acme" is a case-insensitive repeat.
+        self.assertEqual(profile["people"], ["Dr. Jane Doe", "Sam Roe"])
+        self.assertEqual(profile["categories"], ["Pediatric dentist", "Dentist"])
+        self.assertEqual(profile["profiles"], ["https://www.linkedin.com/company/acme-dental"])
 
 
 class CheckTest(unittest.TestCase):

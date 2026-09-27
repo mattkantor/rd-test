@@ -142,17 +142,41 @@ def site_page(request, pk):
 
 
 # The origin is the site's identity (runs attach to it by URL), so it is set once, by the first crawl, never edited.
-SiteForm = modelform_factory(Site, fields=["business_name", "icp", "city", "state", "country"])
+SiteForm = modelform_factory(Site, fields=["business_name", "icp", "category", "people", "aliases", "profiles",
+                                           "city", "state", "country"])
+
+
+def suggestions(site):
+    """Blank fingerprint fields pre-filled from the latest crawl's identity profile, for the user to confirm and save."""
+    run = site.runs.first()
+    data = {}
+    for name in ("ai_search", "llm_reputation"):
+        data = dashboard.as_dict(dashboard.read(run.dir, f"technical/{name}.json")) if run else {}
+        if dashboard.as_dict(data.get("profile")):
+            break
+    profile = dashboard.as_dict(data.get("profile"))
+    found = dashboard.as_dict(dashboard.as_dict(data.get("site_read")).get("identity"))
+    names = [n for n in dashboard.as_list(profile.get("names")) if isinstance(n, str)]
+    main = (site.business_name or (names[0] if names else "")).lower()
+    text = lambda values: "\n".join(v for v in values if isinstance(v, str))
+    values = {"category": found.get("category") if isinstance(found.get("category"), str) else
+                          text(dashboard.as_list(profile.get("categories"))[:1]),
+              "people": text(dashboard.as_list(profile.get("people"))),
+              "aliases": text(n for n in names if n.lower() != main),
+              "profiles": text(dashboard.as_list(profile.get("profiles")))}
+    return {key: value for key, value in values.items() if value and not getattr(site, key)}
 
 
 @staff_member_required
 def site_edit(request, pk):
     site = get_object_or_404(Site, pk=pk)
-    form = SiteForm(request.POST or None, instance=site)
+    suggested = {} if request.method == "POST" else suggestions(site)
+    form = SiteForm(request.POST or None, instance=site, initial=suggested)
     if request.method == "POST" and form.is_valid():
         form.save()
         return redirect("site", pk=site.pk) if site.runs.exists() else back()
-    return render(request, "site_edit.html", {"site": site, "form": form})
+    return render(request, "site_edit.html", {"site": site, "form": form,
+                                              "suggested": [form[key].label for key in suggested]})
 
 
 @staff_member_required

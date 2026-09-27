@@ -30,6 +30,11 @@ class Config:
     dimensions: list = field(default_factory=list)
     icp: str | None = None  # User-supplied audience for llm_reputation buyer questions.
     location: str | None = None  # "City, State, Country" for a local business.
+    # Identity fingerprint: who else the business is, so answers and third-party pages can be matched to it.
+    category: str | None = None  # What kind of business, e.g. "growth advisory for SaaS CEOs"; steers buyer questions.
+    person: list = field(default_factory=list)  # Founders or principals, e.g. for a personal-brand practice.
+    alias: list = field(default_factory=list)  # Other names: former names, product names, short forms.
+    known_profile: list = field(default_factory=list)  # Official profile URLs (LinkedIn, Crunchbase, ...).
 
     def validate(self) -> None:
         if min(self.max_pages, self.max_bytes, self.max_sitemaps, self.max_urls) < 1:

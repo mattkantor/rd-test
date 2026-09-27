@@ -50,7 +50,10 @@ def parser(json_errors=False):
         cmd.add_argument("--max-urls", type=positive, default=10_000)
         cmd.add_argument("--allow-private", action="store_true", help="Allow trusted local/private test sites")
         cmd.add_argument("--collect-social", action="store_true", help="Attempt public HTML capture of discovered profiles")
-        cmd.add_argument("--known-profile", action="append", default=[])
+        cmd.add_argument("--known-profile", action="append", default=[], help="Official profile URL (repeatable)")
+        cmd.add_argument("--category", help="What kind of business, e.g. 'pediatric dentist'; steers buyer questions")
+        cmd.add_argument("--person", action="append", default=[], help="Founder or principal's name (repeatable)")
+        cmd.add_argument("--alias", action="append", default=[], help="Another name the business uses (repeatable)")
         cmd.add_argument("--company-name")
         cmd.add_argument("--icp", help="Ideal customer profile for llm_reputation buyer questions")
         cmd.add_argument("--location", help="City, State, Country for a local business (llm_reputation)")
@@ -96,8 +99,8 @@ def run(args, target=None, output=None, progress=None):
     # by question; only runs asked for the same ICP and location qualify.
     client.previous_runs = [] if getattr(args, "fresh_questions", False) else [
         run for run, m in previous_runs(output.parent, urlsplit(target).hostname)
-        if all((m.get("config") or {}).get(key) == getattr(config, key) for key in ("icp", "location"))]
-    dimensions = list(dict.fromkeys(config.dimensions))
+        if all((m.get("config") or {}).get(key) == getattr(config, key) for key in ("icp", "location", "category"))]
+    dimensions = [name for name in DIMENSIONS if name in config.dimensions]  # Registry order: citation_gap reads ai_search.
     steps = ["Discovering sitemaps", "Crawling pages", "Running technical checks",
              *(DIMENSIONS[name]["label"] for name in dimensions), "Writing bundle"]
 
@@ -128,6 +131,7 @@ def run(args, target=None, output=None, progress=None):
     brand = names[0]["value"] if names else urlsplit(target).hostname
     # Before write_bundle: adds page["copy_scores"] to each page file, plus the site summary.
     technical["copy-scores"] = copy_scores(pages, names[0]["value"] if names else None)
+    client.technical = technical  # Lets a dimension read ones collected before it.
     for i, name in enumerate(dimensions, 3):
         stage(i)
         technical[name] = DIMENSIONS[name]["collect"](client, discovery, pages, brand)

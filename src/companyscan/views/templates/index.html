@@ -3,13 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Company Footprint</title>
+  <title>Sites · DrGrow</title>
   <link rel="stylesheet" href="{{ static('app.css') }}">
   <link rel="stylesheet" href="{{ static('pangram.css') }}">
 </head>
 <body>
+{% include "_header.html" %}
 <main>
-  <h1>Company Footprint <small><a href="/admin/">admin</a></small></h1>
+  <h1>Sites</h1>
   {% if message %}<p class="msg">{{ message }}</p>{% endif %}
 
   <form class="crawl" method="post" action="/crawl">{{ csrf_input }}

@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 
-from companyscan.dimensions import DIMENSIONS, coverage, google_business, meta_ads as meta_ads_mod, practitioners, reputation
+from companyscan.dimensions import DIMENSIONS, citation_gap, coverage, google_business, meta_ads as meta_ads_mod, practitioners, reputation
 from companyscan.dimensions.fonts import collect as fonts
 from companyscan.dimensions.meta_ads import collect as meta_ads
 from companyscan.dimensions.reputation import collect as llm_reputation
@@ -410,3 +410,70 @@ class GoogleBusinessTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CitationGapTest(unittest.TestCase):
+    PROFILE = {"domain": "acme.test", "names": ["Acme Dental"], "people": ["Jane Doe"], "profiles": ["https://www.linkedin.com/in/janedoe"]}
+    HTML = {"content-type": "text/html; charset=utf-8"}
+
+    def client(self):
+        pages = {
+            "https://yelp.test/best": (200, self.HTML, '<h1>Best dentists</h1><a href="https://www.acme.test/">Acme Dental</a>'),
+            "https://news.test/a": (200, self.HTML, "<p>Dentist Jane Doe opened a clinic.</p>"),
+            "https://dir.test/list": (200, self.HTML, "<p>Smile Co, Tooth Inc</p>"),
+            "https://blocked.test/robots.txt": (200, {}, "User-agent: *\nDisallow: /"),
+            "https://pdf.test/r.pdf": (200, {"content-type": "application/pdf"}, "%PDF"),
+        }
+        fetched = []
+
+        def get(url, allowed_origin=None):
+            fetched.append(url)
+            status, headers, body = pages.get(url, (404, {}, ""))
+            return Response(url, url, status=status, headers=headers, body=body)
+        return SimpleNamespace(get=get, fetched=fetched, progress=lambda *a: None, technical={"ai_search": {
+            "status": "COMPLETE", "profile": self.PROFILE, "answers": [
+                {"prompt": "best dentist?", "sources": [{"url": "https://yelp.test/best?utm_source=openai", "title": "Best"},
+                                                        {"url": "https://acme.test/about"}, {"url": "https://news.test/a"}]},
+                {"prompt": "kids dentist?", "sources": [{"url": "https://yelp.test/best#top"}, {"url": "https://dir.test/list"},
+                                                        {"url": "https://linkedin.com/in/janedoe/"}, {"url": "https://blocked.test/x"},
+                                                        {"url": "https://down.test/x"}, {"url": "https://pdf.test/r.pdf"},
+                                                        {"url": "javascript:alert(1)"}, "junk"]},
+                {"error": "failed"}]}})
+
+    def test_checks_each_cited_page_against_the_fingerprint(self):
+        client = self.client()
+        result = citation_gap.collect(client, DISCOVERY, [], "Acme Dental")
+        pages = {p["url"]: p for p in result["pages"]}
+        yelp = pages["https://yelp.test/best"]  # Tracking parameter and fragment dropped: one page, cited by both answers.
+        self.assertEqual((yelp["answers"], yelp["citations"], yelp["prompts"]), (2, 2, ["best dentist?", "kids dentist?"]))
+        self.assertEqual((yelp["status"], yelp["match"], yelp["matched"][0]), ("mentioned", "strong", {"by": "link", "term": "acme.test"}))
+        news = pages["https://news.test/a"]
+        self.assertEqual((news["status"], news["match"]), ("mentioned", "name_only"))
+        self.assertIn("Jane Doe opened", news["snippet"])
+        self.assertEqual(pages["https://dir.test/list"]["status"], "not_mentioned")
+        self.assertEqual(pages["https://acme.test/about"]["status"], "owned")
+        self.assertEqual(pages["https://linkedin.com/in/janedoe/"]["status"], "owned")  # www. and trailing slash ignored.
+        self.assertEqual(pages["https://blocked.test/x"]["status"], "blocked_by_robots")
+        self.assertEqual(pages["https://down.test/x"]["status"], "unreachable")
+        self.assertEqual(pages["https://pdf.test/r.pdf"]["status"], "unreadable")
+        self.assertNotIn("https://blocked.test/x", client.fetched)
+        self.assertNotIn("https://acme.test/about", client.fetched)  # Owned pages aren't fetched.
+        self.assertEqual(result["summary"], {"cited_pages": 8, "owned": 2, "third_party": 6, "mentioned": 2, "not_mentioned": 1,
+                                             "unreachable": 1, "blocked_by_robots": 1, "unreadable": 1, "not_checked": 0,
+                                             "mentioned_name_only": 1})
+        domains = {d["domain"]: d["mentioned"] for d in result["domains"]}
+        self.assertEqual((domains["yelp.test"], domains["dir.test"], domains["down.test"]), (True, False, None))
+        self.assertEqual(result["status"], "PARTIAL")
+
+    def test_pages_over_the_cap_are_listed_not_fetched(self):
+        client = self.client()
+        with patch.object(citation_gap, "MAX_PAGES", 1):
+            result = citation_gap.collect(client, DISCOVERY, [], "Acme Dental")
+        self.assertEqual(result["summary"]["not_checked"], 5)
+        self.assertEqual([p for p in client.fetched if not p.endswith("robots.txt")], ["https://yelp.test/best"])
+
+    def test_needs_ai_search_in_the_same_run(self):
+        for technical in ({}, {"ai_search": {"status": "UNKNOWN"}}):
+            result = citation_gap.collect(SimpleNamespace(technical=technical), DISCOVERY, [], "Acme")
+            self.assertEqual((result["status"], result["reason"]), ("UNKNOWN", "ai_search_not_collected"))
+        self.assertLess(list(DIMENSIONS).index("ai_search"), list(DIMENSIONS).index("citation_gap"))

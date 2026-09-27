@@ -4,11 +4,21 @@ from datetime import datetime
 from urllib.parse import urlsplit
 
 from django.conf import settings
+from django.core.validators import URLValidator
 from django.db import models
 from django.db.models import Q
 
 from ..report.analyze import latest
 from ..scan.crawler import normalize, origin
+
+
+def lines(text):
+    return [line.strip() for line in (text or "").splitlines() if line.strip()]
+
+
+def validate_urls(text):
+    for line in lines(text):
+        URLValidator(schemes=["http", "https"])(line)
 
 
 class Site(models.Model):
@@ -19,6 +29,12 @@ class Site(models.Model):
     city = models.CharField(max_length=100, blank=True)
     state = models.CharField(max_length=100, blank=True)
     country = models.CharField(max_length=100, blank=True)
+    # Identity fingerprint: tells this business apart from namesakes in AI answers and on third-party pages.
+    category = models.CharField(max_length=255, blank=True, help_text="What kind of business, e.g. growth advisory for SaaS CEOs")
+    people = models.TextField(blank=True, help_text="Founders or principals, one per line")
+    aliases = models.TextField("Other names", blank=True, help_text="Former names, product names, short forms; one per line")
+    profiles = models.TextField("Official profiles", blank=True, validators=[validate_urls],
+                                help_text="LinkedIn, Crunchbase, G2, Google Business Profile URLs; one per line")
 
     def __str__(self):
         return self.origin
@@ -34,8 +50,10 @@ class Site(models.Model):
     def scan_args(self):
         """CLI flags carrying what the user told us about the business into the crawl."""
         # flag=value so text starting with "-" isn't read as another flag.
-        return [f"{flag}={value.strip()}" for flag, value in
-                (("--company-name", self.business_name), ("--icp", self.icp), ("--location", self.location)) if value.strip()]
+        single = (("--company-name", self.business_name), ("--icp", self.icp), ("--location", self.location), ("--category", self.category))
+        multi = (("--person", self.people), ("--alias", self.aliases), ("--known-profile", self.profiles))
+        return ([f"{flag}={value.strip()}" for flag, value in single if value.strip()]
+                + [f"{flag}={value}" for flag, text in multi for value in lines(text)])
 
 
 class Run(models.Model):

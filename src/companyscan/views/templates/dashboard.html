@@ -3,11 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ m.header.host }} · Company Footprint</title>
+  <title>{{ m.header.host }} · DrGrow</title>
   <link rel="stylesheet" href="{{ static('app.css') }}">
   <link rel="stylesheet" href="{{ static('pangram.css') }}">
 </head>
 <body>
+{% include "_header.html" %}
 {% macro val(v) -%}
   {%- set h = v | href -%}
   {%- if h %}<a href="{{ h }}" rel="noopener noreferrer" target="_blank">{{ v }}</a>
@@ -99,7 +100,7 @@
     <input type="hidden" name="dir" value="{{ bundle.name }}">
     <input type="hidden" name="return_to" value="{{ 'site' if on_site else 'dashboard' }}">
     <button data-busy {% if running %}disabled{% endif %}>Re-crawl + report</button>
-    <small>Crawls again with every check (WCAG, analytics, AEO, social previews, security, fonts, AI reputation, AI search, answer coverage, practitioner profiles, Google listing, Meta ads), then writes
+    <small>Crawls again with every check (WCAG, analytics, AEO, social previews, security, fonts, AI reputation, AI search, citation gap, answer coverage, practitioner profiles, Google listing, Meta ads), then writes
       the report and PDF for the new run. This run is kept. Expect a few minutes: AI reputation and AI search each make about 50 LLM calls,
       and the report is one long LLM call.</small>
   </form>

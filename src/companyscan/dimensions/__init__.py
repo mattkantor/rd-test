@@ -2,13 +2,14 @@
 technical/<name>.json; judgment belongs to the analysis skill's references/<name>.md rubric."""
 from functools import partial
 
-from . import coverage, fonts, google_business, jev_copy, meta_ads, practitioners, reputation, security
+from . import citation_gap, coverage, fonts, google_business, jev_copy, meta_ads, practitioners, reputation, security
 
 DIMENSIONS = {
     "security": {"label": "Security headers", "collect": security.collect},
     "fonts": {"label": "Font consistency", "collect": fonts.collect},
     "llm_reputation": {"label": "LLM reputation", "collect": reputation.collect},
     "ai_search": {"label": "AI search (web)", "collect": partial(reputation.collect, search=True)},
+    "citation_gap": {"label": "Citation gap (needs AI search)", "collect": citation_gap.collect},
     "answer_coverage": {"label": "Answer coverage (LLM)", "collect": coverage.collect},
     "practitioners": {"label": "Practitioner profiles (LLM)", "collect": practitioners.collect},
     "google_business": {"label": "Google Business Profile", "collect": google_business.collect},
