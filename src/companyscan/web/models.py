@@ -11,7 +11,7 @@ from django.db.models import Q
 from ..dimensions.reputation import QUESTIONS
 from ..report.analyze import latest
 from ..scan.crawler import normalize, origin
-from .dashboard import SNAPSHOT, snapshot
+from .dashboard import SNAPSHOT, load, snapshot
 
 
 def lines(text):
@@ -162,12 +162,13 @@ class Run(models.Model):
 
 
 class Snapshot(models.Model):
-    """What "Since last run" compares for one crawl (dashboard.snapshot of each tracked check), kept after the bundle is
-    deleted so the next run still has something to compare with."""
+    """What "Since last run" compares for one crawl (dashboard.snapshot of each tracked check) and its headline numbers
+    for the trend lines, kept after the bundle is deleted so later runs still have something to compare with."""
     site = models.ForeignKey(Site, on_delete=models.CASCADE, related_name="snapshots")
     name = models.CharField(max_length=255, unique=True)  # The bundle folder, which may be gone.
     created_at = models.DateTimeField(null=True)
     checks = models.JSONField(default=dict)
+    metrics = models.JSONField(default=dict)  # dashboard.metrics for the run: its headline numbers, for trend lines.
 
     class Meta:
         ordering = ["-created_at"]
@@ -194,9 +195,12 @@ def parse_time(value):
 
 def sync(root=None):
     """Upsert a Run per crawl manifest on disk and drop Runs whose folder is gone; the disk is the record. A new run also
-    gets a Snapshot, which stays after its folder is deleted."""
+    gets a Snapshot (tracked checks and headline numbers), which stays after its folder is deleted."""
     # ponytail: rescans every manifest; fine for hundreds of bundles, track mtimes if it gets slow.
     seen, snapped = [], set(Snapshot.objects.values_list("name", flat=True))
+    # Snapshots from before metrics were stored; filled in while their bundle still exists. A real run always has
+    # "pages", so a filled snapshot is never empty again.
+    unmeasured = set(Snapshot.objects.filter(metrics={}).values_list("name", flat=True))
     for manifest in (root or settings.COMPANYSCAN_OUTPUT).glob("*/manifest.json"):
         try:
             data = json.loads(manifest.read_text(encoding="utf-8"))
@@ -217,7 +221,10 @@ def sync(root=None):
             checks = {name: snapshot(name, load_json(manifest.parent / f"technical/{name}.json")) for name in SNAPSHOT}
             Snapshot.objects.create(site=Site.objects.get(origin=site), name=manifest.parent.name,
                                     created_at=parse_time(data.get("created_at")),
-                                    checks={name: data for name, data in checks.items() if data})
+                                    checks={name: data for name, data in checks.items() if data},
+                                    metrics=load(manifest.parent)["metrics"])
+        elif manifest.parent.name in unmeasured:
+            Snapshot.objects.filter(name=manifest.parent.name).update(metrics=load(manifest.parent)["metrics"])
     Run.objects.exclude(name__in=seen).delete()
 
 

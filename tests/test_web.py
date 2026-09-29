@@ -1,5 +1,6 @@
 """Django UI tests. They run under `python manage.py test` (needs the web extra); plain unittest skips them."""
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -19,7 +20,7 @@ if DJANGO:
     from companyscan.cli import parser
     from companyscan.dimensions import DIMENSIONS
     from companyscan.web import tasks
-    from companyscan.web.models import Job, QuestionSet, Run, Site, sync
+    from companyscan.web.models import Job, QuestionSet, Run, Site, Snapshot, sync
 else:
     TestCase = unittest.TestCase
 
@@ -282,6 +283,18 @@ class WebTests(WebCase):
         with patch.object(tasks, "analyze", lambda b: None), patch.object(tasks, "render_pdf", lambda b: None):
             self.assertEqual(self.client.post("/report", {"dir": "acme-old", "return_to": "site"})["location"], f"/site/{pk}")
         self.assertEqual(self.client.get("/site/999").status_code, 404)
+
+    def test_sync_stores_each_runs_metrics_and_backfills_old_snapshots(self):
+        bundle(self.root, "acme-a", "https://acme.test/", "2026-01-01T00:00:00+00:00")
+        sync()
+        # No check files in this bundle, so only the page count: what wasn't measured is absent, not 0.
+        self.assertEqual(Snapshot.objects.get(name="acme-a").metrics, {"pages": 3})
+        Snapshot.objects.filter(name="acme-a").update(metrics={})  # A snapshot stored before metrics existed.
+        sync()
+        self.assertEqual(Snapshot.objects.get(name="acme-a").metrics, {"pages": 3})
+        shutil.rmtree(self.root / "acme-a")
+        sync()
+        self.assertEqual(Snapshot.objects.get(name="acme-a").metrics, {"pages": 3})  # Kept after the bundle is deleted.
 
     def test_edit_page_prefills_blank_fingerprint_fields_from_the_latest_crawl(self):
         d = bundle(self.root, "acme", "https://acme.test/", "2026-01-01T00:00:00+00:00")
