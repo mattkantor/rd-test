@@ -250,6 +250,10 @@ class LoadTest(unittest.TestCase):
         self.assertIsNone(trend["Report"])  # Not trended.
         line = {t["title"]: t["trend"] for t in load(self.bundle, history=history[:1])["tiles"]}["SEO basics"]
         self.assertEqual([len(points.split()) for points in line["lines"]], [2])
+        # A translucent area under each line, closed along the bottom edge; only the latest point shows a dot.
+        self.assertEqual(line["areas"], [f"3.0,28 {line['lines'][0]} 197.0,28"])
+        self.assertEqual([d["shown"] for d in line["dots"]], [False, True])
+        self.assertEqual([d["shown"] for d in seo["dots"]], [True, True])  # Stranded by the gap: each needs its dot.
         flat = {t["title"]: t["trend"] for t in load(self.bundle, history=[(None, {"seo_pct": 50})])["tiles"]}["SEO basics"]
         self.assertEqual((flat["delta"], flat["trend"], {d["y"] for d in flat["dots"]}), (None, "same", {14.0}))
         self.assertEqual(flat["dots"][0]["title"], "50%")  # No date for that run.

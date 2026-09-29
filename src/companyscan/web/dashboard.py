@@ -680,7 +680,7 @@ def tiles(model, raw):
     return out
 
 
-SPARK_RUNS, SPARK_W, SPARK_H = 12, 120, 28
+SPARK_RUNS, SPARK_W, SPARK_H = 12, 200, 28
 NOISY = {"ai_rank", "search_rank"}  # Model answers vary run to run even with the same questions.
 
 
@@ -702,12 +702,21 @@ def spark(history, key):
         if v is None:
             segments, segment = segments + [segment], []
             continue
-        dots.append({"x": x(i), "y": y(v), "title": f"{str(when or '')[:10]} {fmt(v)}".strip()})
-        segment.append(f"{x(i)},{y(v)}")
+        segment.append(len(dots))
+        dots.append({"x": x(i), "y": y(v), "title": f"{str(when or '')[:10]} {fmt(v)}".strip(), "shown": False})
+    runs = [s for s in segments + [segment] if s]
+    # Visible dots only where the line doesn't show the value: the latest point and any point stranded between gaps.
+    # The rest stay as invisible hover targets for their date and value.
+    for s in runs:
+        dots[s[0]]["shown"] |= len(s) == 1
+    dots[-1]["shown"] = True
+    points = lambda s: " ".join(f"{dots[i]['x']},{dots[i]['y']}" for i in s)
     now = values[-1]
     before = next((v for v in reversed(values[:-1]) if v is not None), None)
     delta = round(now - before, 2) if now is not None and before is not None else None
-    return {"dots": dots, "lines": [" ".join(s) for s in segments + [segment] if len(s) > 1],
+    return {"box": f"0 0 {SPARK_W} {SPARK_H}", "dots": dots, "lines": [points(s) for s in runs if len(s) > 1],
+            # The same lines closed along the bottom edge, for the translucent fill under them.
+            "areas": [f"{dots[s[0]]['x']},{SPARK_H} {points(s)} {dots[s[-1]]['x']},{SPARK_H}" for s in runs if len(s) > 1],
             "delta": f"{delta:+g}" if delta else None, "arrow": "▲" if delta and delta > 0 else "▼" if delta else "",
             "trend": metric(label, before, now, higher)["trend"],
             "missing": now is None and before is not None}  # Measured before, not this run: not a first run.
