@@ -77,8 +77,7 @@
 <main class="dash">
   <header class="run-head">
     <div>
-      <p><a href="/">← All sites</a>{% if site and not on_site %} · <a href="/site/{{ site.pk }}">Current assessment</a>{% endif %}</p>
-      <h1>{{ m.header.host }}{% if site and bundle.name != history[0].name %} <small>older assessment</small>{% endif %}</h1>
+      <h1>{{ m.header.host }}{% if site and bundle.name != history[0].name %} <small>older assessment</small>{% endif %}{% if site and not on_site %} <small><a href="/site/{{ site.pk }}">Current assessment</a></small>{% endif %}</h1>
       {% if site %}<p class="meta profile">
         {% if site.business_name %}<strong>{{ site.business_name }}</strong>{% endif %}{% if site.location %} · {{ site.location }}{% endif %}
         {% if site.icp %}<br>ICP: {{ site.icp | truncate(120) }}{% endif %}
