@@ -75,52 +75,37 @@
   {%- endif -%}
 {%- endmacro %}
 <main class="dash">
-  <p><a href="/">← All sites</a>{% if site and not on_site %} · <a href="/site/{{ site.pk }}">Current assessment</a>{% endif %}</p>
-  <h1>{{ m.header.host }}{% if site and bundle.name != history[0].name %} <small>older assessment</small>{% endif %}</h1>
-  {% if site %}<p class="meta profile">
-    {% if site.business_name %}<strong>{{ site.business_name }}</strong> · {% endif %}{% if site.location %}{{ site.location }} · {% endif %}
-    {% if site.icp %}ICP: {{ site.icp | truncate(120) }} · {% endif %}<a class="button" href="/site/{{ site.pk }}/edit">Edit profile</a>
-  </p>{% endif %}
-  <p class="meta">
-    {{ m.header.created_at | local_time }} · <span class="{{ m.header.status | badge }}">{{ m.header.status }}</span>
-    · {{ m.header.command }} · {{ m.header.counts.pages or 0 }} pages · max {{ m.header.max_pages }} pages, depth {{ m.header.max_depth }}
-    {% if m.header.dimensions %}· {{ m.header.dimensions | join(", ") }}{% endif %}
-    · errors: {{ m.header.errors }} · <a href="{{ (bundle / 'manifest.json') | file_url }}">manifest</a>
-  </p>
-  <p class="meta">Integrity:
-    {% if m.integrity == [] %}<span class="st st-pass">all artifacts verified</span>
-    {% elif m.integrity is string %}<span class="st st-unknown">{{ m.integrity }}</span>
-    {% else %}<span class="st st-fail">{{ m.integrity | length }} problem(s)</span>: {{ m.integrity | join("; ") }}{% endif %}
-  </p>
-
-  {% set running = job and job.state == "running" %}
-  <div id="job" data-poll="/run/{{ bundle.name | urlencode }}/job">{% include "job.html" %}</div>
-
-  <form class="recrawl" method="post" action="/recrawl">{{ csrf_input }}
-    <input type="hidden" name="dir" value="{{ bundle.name }}">
-    <input type="hidden" name="return_to" value="{{ 'site' if on_site else 'dashboard' }}">
-    <button data-busy {% if running %}disabled{% endif %}>Re-crawl + report</button>
-    <small>Crawls again with every check (WCAG, analytics, AEO, social previews, security, fonts, AI reputation, AI search, citation gap, answer coverage, practitioner profiles, Google listing, Meta ads), then writes
-      the report and PDF for the new run. This run is kept. Expect a few minutes: AI reputation and AI search each make about 50 LLM calls,
-      and the report is one long LLM call.</small>
-  </form>
-
-  {% if history | length > 1 %}
-  <details class="history" open>
-    <summary>History · {{ history | length }} assessments</summary>
-    <table class="data">
-      <thead><tr><th>Crawled</th><th>Pages · status</th><th>Checks</th><th>Report</th></tr></thead>
-      <tbody>{% for r in history %}
-        <tr{% if r.name == bundle.name %} class="target"{% endif %}>
-          <td>{% if r.name == bundle.name %}{{ r.created_at | local_time }} (shown){% else %}<a href="/run/{{ r.name | urlencode }}">{{ r.created_at | local_time }}</a>{% endif %}{% if loop.first %} · current{% endif %}</td>
-          <td>{{ r.pages }} · {{ r.status }}</td>
-          <td><small>{{ r.dimensions | join(", ") }}</small></td>
-          <td>{% if r.pdf %}<a href="{{ r.pdf | file_url }}">PDF</a>{% elif r.report %}<a href="{{ r.report | file_url }}">report.md</a>{% else %}—{% endif %}</td>
-        </tr>{% endfor %}
-      </tbody>
-    </table>
-  </details>
-  {% endif %}
+  <header class="run-head">
+    <div>
+      <p><a href="/">← All sites</a>{% if site and not on_site %} · <a href="/site/{{ site.pk }}">Current assessment</a>{% endif %}</p>
+      <h1>{{ m.header.host }}{% if site and bundle.name != history[0].name %} <small>older assessment</small>{% endif %}</h1>
+      {% if site %}<p class="meta profile">
+        {% if site.business_name %}<strong>{{ site.business_name }}</strong>{% endif %}{% if site.location %} · {{ site.location }}{% endif %}
+        {% if site.icp %}<br>ICP: {{ site.icp | truncate(120) }}{% endif %}
+      </p>{% endif %}
+      {% set running = job and job.state == "running" %}
+      <div id="job" data-poll="/run/{{ bundle.name | urlencode }}/job">{% include "job.html" %}</div>
+      <form class="recrawl" method="post" action="/recrawl">{{ csrf_input }}
+        <input type="hidden" name="dir" value="{{ bundle.name }}">
+        <input type="hidden" name="return_to" value="{{ 'site' if on_site else 'dashboard' }}">
+        <button data-busy {% if running %}disabled{% endif %}>Re-crawl + report</button>
+        <small title="Crawls again with every check (WCAG, analytics, AEO, social previews, security, fonts, AI reputation, AI search, citation gap, answer coverage, practitioner profiles, Google listing, Meta ads), then writes the report and PDF for the new run. This run is kept. AI reputation and AI search each make about 50 LLM calls, and the report is one long LLM call.">Every check, then the report and PDF · a few minutes · this run is kept</small>
+      </form>
+    </div>
+    <aside class="run-meta">
+      <dl>
+        <dt>Crawled</dt><dd>{{ m.header.created_at | local_time }} · <span class="{{ m.header.status | badge }}">{{ m.header.status }}</span></dd>
+        <dt>Pages</dt><dd>{{ m.header.counts.pages or 0 }} of max {{ m.header.max_pages }} · depth {{ m.header.max_depth }} · {{ m.header.command }}</dd>
+        {% if m.header.dimensions %}<dt>Checks</dt><dd><small>{{ m.header.dimensions | join(", ") }}</small></dd>{% endif %}
+        <dt>Errors</dt><dd>{{ m.header.errors }} · <a href="{{ (bundle / 'manifest.json') | file_url }}">manifest</a></dd>
+        <dt>Integrity</dt><dd>
+          {% if m.integrity == [] %}<span class="st st-pass">all artifacts verified</span>
+          {% elif m.integrity is string %}<span class="st st-unknown">{{ m.integrity }}</span>
+          {% else %}<span class="st st-fail">{{ m.integrity | length }} problem(s)</span>: {{ m.integrity | join("; ") }}{% endif %}</dd>
+      </dl>
+      {% if site %}<a class="button" href="/site/{{ site.pk }}/edit">Edit profile</a>{% endif %}
+    </aside>
+  </header>
 
   <nav class="tabs" aria-label="Dashboard sections">
     <a href="#overview">Overview</a>{% if m.since %}<a href="#changes">Changes</a>{% endif %}<a href="#pages">Pages</a><a href="#site">Site-wide</a>{% if m.meta_ads %}<a href="#meta_ads">Ads</a>{% endif %}
@@ -462,6 +447,23 @@
     {% if m.coverage.raw %}<p class="files">Raw data:
       {% for f in m.coverage.raw %}<a href="{{ (bundle / f) | file_url }}">{{ f }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
   </section>
+  {% if history | length > 1 %}
+  <details class="history">
+    <summary>History · {{ history | length }} assessments</summary>
+    <table class="data">
+      <thead><tr><th>Crawled</th><th>Pages · status</th><th>Checks</th><th>Report</th></tr></thead>
+      <tbody>{% for r in history %}
+        <tr{% if r.name == bundle.name %} class="target"{% endif %}>
+          <td>{% if r.name == bundle.name %}{{ r.created_at | local_time }} (shown){% else %}<a href="/run/{{ r.name | urlencode }}">{{ r.created_at | local_time }}</a>{% endif %}{% if loop.first %} · current{% endif %}</td>
+          <td>{{ r.pages }} · {{ r.status }}</td>
+          <td><small>{{ r.dimensions | join(", ") }}</small></td>
+          <td>{% if r.pdf %}<a href="{{ r.pdf | file_url }}">PDF</a>{% elif r.report %}<a href="{{ r.report | file_url }}">report.md</a>{% else %}—{% endif %}</td>
+        </tr>{% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% endif %}
+
 </main>
 <script src="{{ static('poll.js') }}"></script>
 </body>

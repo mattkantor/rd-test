@@ -275,6 +275,10 @@ class WebTests(WebCase):
         page = self.client.get(f"/site/{pk}")
         self.assertContains(page, 'name="dir" value="acme-new"')
         self.assertContains(page, "History · 2 assessments")
+        text = page.content.decode()
+        self.assertLess(text.index('id="coverage"'), text.index("History · 2 assessments"))  # Below the tabs, not above.
+        self.assertIn('<details class="history">', text)  # Collapsed.
+        self.assertLess(text.index('<header class="run-head">'), text.index('<aside class="run-meta">'))
         self.assertContains(page, 'href="/run/acme-old"')
         self.assertContains(page, 'name="return_to" value="site"')
         old = self.client.get("/run/acme-old")
