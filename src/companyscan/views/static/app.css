@@ -51,6 +51,14 @@ form + form { margin-top: 6px; }
 .tile .value { margin: 0; font-size: 34px; line-height: 1.1; font-weight: 650; color: var(--ink); }
 .tile .sub { margin: 0; font-size: 13px; color: var(--ink-2); flex: 1; }
 .tile .chip { align-self: flex-start; }
+.tile .trend { margin: 0; font-size: 13px; font-weight: 600; }
+.trend-better { color: var(--good); } .trend-worse { color: var(--critical); } .trend-same, .trend-none { color: var(--ink-3); }
+.spark { width: 100%; height: 28px; overflow: visible; }
+.spark polyline { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+.spark circle { fill: var(--accent); }
+.facts { display: flex; flex-wrap: wrap; gap: 8px 16px; list-style: none; margin: 0 0 12px; padding: 0; font-size: 14px; font-weight: 600; }
+.facts a { color: var(--ink-2); text-decoration: none; } .facts a:hover { color: var(--ink); }
+.fact-yes { color: var(--good) !important; }
 .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--ink); background: #f3f3f0; border-radius: 999px; padding: 2px 9px 2px 3px; white-space: nowrap; }
 .chip .icon { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; font-size: 10px; color: #fff; background: var(--neutral); }
 .chip-good .icon { background: var(--good); }
@@ -105,6 +113,7 @@ form + form { margin-top: 6px; }
 .tabs a:hover { color: var(--ink); }
 .tab { display: none; scroll-margin-top: 56px; padding-top: 4px; }
 .tab:target, .tab:has(:target), .dash:not(:has(.tab:target, .tab :target)) #overview { display: block; }
+.dash:has(#changes:target) .tabs a[href="#changes"],
 .dash:not(:has(.tab:target, .tab :target)) .tabs a[href="#overview"], .dash:has(#overview:target, #report:target) .tabs a[href="#overview"],
 .dash:has(#pages:target) .tabs a[href="#pages"], .dash:has(#site:target) .tabs a[href="#site"], .dash:has(#meta_ads:target) .tabs a[href="#meta_ads"],
 .dash:has(#reputation:target) .tabs a[href="#reputation"], .dash:has(#social:target) .tabs a[href="#social"],

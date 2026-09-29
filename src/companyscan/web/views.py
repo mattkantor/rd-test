@@ -109,10 +109,11 @@ def render_run(request, name, on_site=False):
     run = Run.objects.filter(name=name).select_related("site").first()
     # Render from root/name, not the resolved path: file_url is relative to the unresolved root (macOS /var symlink).
     view = settings.COMPANYSCAN_OUTPUT / name
-    # Stored snapshots, so "Since last run" still finds runs whose bundles were deleted.
-    earlier = [(s.name, s.created_at.isoformat(), s.checks.get) for s in
-               run.site.snapshots.filter(created_at__lt=run.created_at)] if run and run.created_at else None
-    return render(request, "dashboard.html", {"m": dashboard.load(view, sort, desc, earlier), "bundle": view, "job": job,
+    # Stored snapshots, so "Since last run" and the trend lines still find runs whose bundles were deleted.
+    before = list(run.site.snapshots.filter(created_at__lt=run.created_at)) if run and run.created_at else None
+    earlier = [(s.name, s.created_at.isoformat(), s.checks.get) for s in before] if before is not None else None
+    history = [(s.created_at.isoformat(), s.metrics) for s in reversed(before or [])]  # Oldest first.
+    return render(request, "dashboard.html", {"m": dashboard.load(view, sort, desc, earlier, history), "bundle": view, "job": job,
                                               "percent": job.percent if job else 0, "site": run.site if run else None,
                                               "history": run.site.runs.all() if run else [], "on_site": on_site})
 

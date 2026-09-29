@@ -123,7 +123,7 @@
   {% endif %}
 
   <nav class="tabs" aria-label="Dashboard sections">
-    <a href="#overview">Overview</a><a href="#pages">Pages</a><a href="#site">Site-wide</a>{% if m.meta_ads %}<a href="#meta_ads">Ads</a>{% endif %}
+    <a href="#overview">Overview</a>{% if m.since %}<a href="#changes">Changes</a>{% endif %}<a href="#pages">Pages</a><a href="#site">Site-wide</a>{% if m.meta_ads %}<a href="#meta_ads">Ads</a>{% endif %}
     <a href="#reputation">AI reputation</a><a href="#ai_search">AI search</a><a href="#answers">Answers</a><a href="#people">People</a><a href="#listing">Google</a><a href="#social">Social</a><a href="#coverage">Coverage</a>
   </nav>
 
@@ -146,6 +146,10 @@
     </div>
   </section>
 
+  <ul class="facts" aria-label="Current state">
+    {% for label, value, href, detail in m.facts %}<li><a href="{{ href }}" class="fact-{{ 'yes' if value is sameas true else 'no' if value is sameas false else 'unknown' }}"{% if detail %} title="{{ detail }}"{% endif %}>{{ "✓" if value is sameas true else "✗" if value is sameas false else "—" }} {{ label }}</a></li>{% endfor %}
+  </ul>
+
   <section class="tiles">
     {% for t in m.tiles %}
     <a class="tile" href="{{ t.href }}">
@@ -154,32 +158,15 @@
       {% if t.meter %}<div class="meter" title="{{ t.meter.pct }}%"><div style="width: {{ t.meter.pct }}%"></div></div>{% endif %}
       <p class="sub">{{ t.sub }}</p>
       {% if t.status %}{{ chip(t.level, t.status) }}{% endif %}
+      {% if t.trend %}
+      <p class="trend trend-{{ t.trend.trend or 'none' }}">{% if t.trend.delta %}{{ t.trend.delta }} {{ t.trend.arrow }}{% elif t.trend.trend == "same" %}No change{% else %}First run{% endif %}</p>
+      <svg class="spark" viewBox="0 0 120 28" role="img" aria-label="{{ t.title }} over the last {{ t.trend.dots | length }} measured runs">{% for points in t.trend.lines %}<polyline points="{{ points }}"/>{% endfor %}{% for d in t.trend.dots %}<circle cx="{{ d.x }}" cy="{{ d.y }}" r="3"><title>{{ d.title }}</title></circle>{% endfor %}</svg>
+      {% endif %}
     </a>
     {% endfor %}
   </section>
+  {% if m.ai_note %}<p class="note">AI results: model answers vary between runs even with the same questions; look for changes that hold over several runs.</p>{% endif %}
 
-  {% if m.since %}
-  <details id="since" open><summary>Since last run</summary>
-    {% for c in m.since %}
-    <h4><a href="{{ c.href }}">{{ c.label }}</a> <small>vs {{ c.created_at | local_time }} ({{ c.run }})</small></h4>
-    <div class="scroll"><table class="data since"><thead><tr><th></th><th>Then</th><th>Now</th><th></th></tr></thead><tbody>
-    {% for r in c.metrics %}<tr><td>{{ r.label }}</td><td>{{ r.before }}</td><td>{{ r.after }}</td>
-      <td>{% if r.trend == "better" %}{{ chip("good", "Better") }}{% elif r.trend == "worse" %}{{ chip("critical", "Worse") }}{% elif r.trend == "same" %}<span class="muted">Same</span>{% endif %}</td></tr>{% endfor %}
-    </tbody></table></div>
-    {% for d in c.details %}<p class="note">{{ d }}</p>{% endfor %}
-    {% if c.same_questions is defined %}
-      {% if not c.same_questions %}<p class="note">Different questions from that run, so only the totals compare.</p>
-      {% elif c.questions %}<details class="nested"><summary>Questions that changed <small>{{ c.questions | length }} of {{ c.same_questions }} asked both times</small></summary>
-        <table class="data"><thead><tr><th>Question</th><th>Then</th><th>Now</th><th></th></tr></thead><tbody>
-        {% for q in c.questions %}<tr><td>{{ q.text }}</td><td>{{ q.before }}</td><td>{{ q.after }}</td><td>{% if q.trend == "better" %}{{ chip("good", "Better") }}{% elif q.trend == "worse" %}{{ chip("critical", "Worse") }}{% endif %}</td></tr>{% endfor %}
-        </tbody></table></details>
-      {% else %}<p class="note">All {{ c.same_questions }} questions asked both times scored the same.</p>{% endif %}
-      {% if c.questions_now > c.same_questions %}<p class="note">{{ c.questions_now - c.same_questions }} question{{ "s" if c.questions_now - c.same_questions != 1 }} new this run.</p>{% endif %}
-    {% endif %}
-    {% endfor %}
-    <p class="note">Model answers vary between runs even with the same questions; treat small moves as noise.</p>
-  </details>
-  {% endif %}
 
   <details id="report" open><summary>Report &amp; findings</summary>
     {% if m.report.md %}
@@ -198,6 +185,29 @@
     {% endif %}
   </details>
   </section>
+
+  {% if m.since %}
+  <section id="changes" class="tab"><h2>Changes since last run</h2>
+    {% for c in m.since %}
+    <h4><a href="{{ c.href }}">{{ c.label }}</a> <small>vs {{ c.created_at | local_time }} ({{ c.run }})</small></h4>
+    <div class="scroll"><table class="data since"><thead><tr><th></th><th>Then</th><th>Now</th><th></th></tr></thead><tbody>
+    {% for r in c.metrics %}<tr><td>{{ r.label }}</td><td>{{ r.before }}</td><td>{{ r.after }}</td>
+      <td>{% if r.trend == "better" %}{{ chip("good", "Better") }}{% elif r.trend == "worse" %}{{ chip("critical", "Worse") }}{% elif r.trend == "same" %}<span class="muted">Same</span>{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% for d in c.details %}<p class="note">{{ d }}</p>{% endfor %}
+    {% if c.same_questions is defined %}
+      {% if not c.same_questions %}<p class="note">Different questions from that run, so only the totals compare.</p>
+      {% elif c.questions %}<details class="nested"><summary>Questions that changed <small>{{ c.questions | length }} of {{ c.same_questions }} asked both times</small></summary>
+        <table class="data"><thead><tr><th>Question</th><th>Then</th><th>Now</th><th></th></tr></thead><tbody>
+        {% for q in c.questions %}<tr><td>{{ q.text }}</td><td>{{ q.before }}</td><td>{{ q.after }}</td><td>{% if q.trend == "better" %}{{ chip("good", "Better") }}{% elif q.trend == "worse" %}{{ chip("critical", "Worse") }}{% endif %}</td></tr>{% endfor %}
+        </tbody></table></details>
+      {% else %}<p class="note">All {{ c.same_questions }} questions asked both times scored the same.</p>{% endif %}
+      {% if c.questions_now > c.same_questions %}<p class="note">{{ c.questions_now - c.same_questions }} question{{ "s" if c.questions_now - c.same_questions != 1 }} new this run.</p>{% endif %}
+    {% endif %}
+    {% endfor %}
+    <p class="note">Model answers vary between runs even with the same questions; treat small moves as noise.</p>
+  </section>
+  {% endif %}
 
   <section id="pages" class="tab pages">
     <div class="pages-head">

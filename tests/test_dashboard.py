@@ -534,6 +534,7 @@ class DashboardPageTest(WebCase):  # Skipped outside python manage.py test.
         self.assertNotIn('href="#meta_ads"', page)
         self.assertNotIn('id="meta_ads"', page)
         self.assertIn("no ad pixel from Meta, LinkedIn", page)
+        self.assertIn('title="no ad pixel from Meta, LinkedIn, Google Ads, TikTok, X, Bing or Pinterest">✗ Ad pixel', page)
 
     def test_renders_since_last_run(self):
         d = full_bundle(self.root)
@@ -544,7 +545,9 @@ class DashboardPageTest(WebCase):  # Skipped outside python manage.py test.
         write(self.root / "older", "technical/answer_coverage.json", {"status": "COMPLETE", "summary": {"answered": 1, "missing": 1},
                                                                      "questions": [{"question": "<b>Cost?</b>", "coverage": "missing"}]})
         page = self.client.get("/run/acme").text
-        self.assertIn("<summary>Since last run</summary>", page)
+        self.assertIn('<section id="changes" class="tab">', page)
+        self.assertIn('href="#changes"', page)
+        self.assertNotIn("<summary>Since last run</summary>", page)
         self.assertIn("(older)", page)
         self.assertIn("&lt;b&gt;Cost?&lt;/b&gt;", page)
         self.assertNotIn("<b>Cost?</b>", page)

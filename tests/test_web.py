@@ -296,6 +296,21 @@ class WebTests(WebCase):
         sync()
         self.assertEqual(Snapshot.objects.get(name="acme-a").metrics, {"pages": 3})  # Kept after the bundle is deleted.
 
+    def test_site_page_shows_trends_state_row_and_changes_tab(self):
+        for name, created, missing in (("acme-a", "2026-01-01T00:00:00+00:00", 2), ("acme-b", "2026-02-01T00:00:00+00:00", 0)):
+            d = bundle(self.root, name, "https://acme.test/", created)
+            (d / "technical").mkdir()
+            (d / "technical/security.json").write_text(json.dumps(
+                {"pages_checked": 1, "https": True, "missing_summary": [{"header": f"h{i}", "pages": 1} for i in range(missing)]}))
+        self.client.get("/")  # sync()
+        page = self.client.get(f"/site/{Site.objects.get(origin='https://acme.test').pk}").text
+        self.assertIn('<svg class="spark"', page)
+        self.assertIn('<p class="trend trend-better">+2 ▲</p>', page)  # 4/6 then 6/6 security headers.
+        self.assertIn("<title>2026-01-01 4/6</title>", page)
+        self.assertIn('<ul class="facts"', page)
+        old = self.client.get("/run/acme-a").text  # An older run's page only charts runs up to it.
+        self.assertNotIn("trend-better", old)
+
     def test_edit_page_prefills_blank_fingerprint_fields_from_the_latest_crawl(self):
         d = bundle(self.root, "acme", "https://acme.test/", "2026-01-01T00:00:00+00:00")
         (d / "technical").mkdir()
