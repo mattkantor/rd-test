@@ -457,8 +457,9 @@ def signed(value):
     return f"{value:+d}" if isinstance(value, int) and not isinstance(value, bool) else "n/a"
 
 
-def tile(title, href, value, sub="", level="neutral", status="", bar=None):
-    return {"title": title, "href": href, "value": value, "sub": sub, "level": level, "status": status, "meter": bar}
+def tile(title, href, value, sub="", level="neutral", status="", bar=None, key=None):
+    """key: the METRICS entry this tile shows, for its trend line (None: not trended)."""
+    return {"title": title, "href": href, "value": value, "sub": sub, "level": level, "status": status, "meter": bar, "key": key}
 
 
 def pct(v):
@@ -569,7 +570,7 @@ def tiles(model, raw):
     counts = as_dict(m.get("counts"))
     pages, limit, skipped = num(counts.get("pages")) or 0, num(h["max_pages"]), num(counts.get("skipped")) or 0
     out.append(tile("Pages crawled", "#pages", pages, f"of {limit} limit · {skipped} skipped" if limit else f"{skipped} skipped",
-                    LEVEL.get(m.get("status"), "neutral"), str(m.get("status") or ""), meter(pages, limit)))
+                    LEVEL.get(m.get("status"), "neutral"), str(m.get("status") or ""), meter(pages, limit), key="pages"))
     r = model["report"]
     verdicts = [f["verdict"] for f in r["findings"]]
     fails, warns = verdicts.count("FAIL"), verdicts.count("WARNING")
@@ -581,7 +582,7 @@ def tiles(model, raw):
     if isinstance(t, dict):
         out.append(tile("Accessibility (WCAG)", "?sort=accessibility#pages", num(t.get("finding_count")) or 0,
                         f"potential barriers · {t.get('pages_checked', 0)} pages checked",
-                        LEVEL.get(t.get("automated_status"), "neutral"), str(t.get("automated_status") or "")))
+                        LEVEL.get(t.get("automated_status"), "neutral"), str(t.get("automated_status") or ""), key="a11y_findings"))
     t = raw["copy-scores"]
     if isinstance(t, dict):
         for sort, (key, label) in COPY.items():
@@ -590,19 +591,19 @@ def tiles(model, raw):
             level = "neutral" if median is None else "serious" if median >= 60 else "warning" if median >= 30 or high else "good"
             out.append(tile(label, f"?sort={sort}#pages", median if median is not None else "—",
                             f"median of {plural(scored, 'page')} · 0-100, higher is more", level,
-                            f"{high} HIGH" if high else "None HIGH" if scored else "Not scored", meter(median, 100)))
+                            f"{high} HIGH" if high else "None HIGH" if scored else "Not scored", meter(median, 100), key=key))
     t = raw["measurement"]
     if isinstance(t, dict):
-        checked, missing = num(t.get("pages_checked")), num(t.get("pages_without_any_measurement_count")) or 0
-        out.append(tile("Analytics", "?sort=analytics#pages", len(as_list(t.get("tools"))),
-                        "tools · " + ("consent tool found" if t.get("has_consent_tool") else "no consent tool"),
+        share = model["metrics"].get("analytics_pct")
+        out.append(tile("Analytics", "?sort=analytics#pages", pct(share) if share is not None else "—",
+                        "pages with analytics · " + plural(len(as_list(t.get("tools"))), "tool"),
                         "good" if t.get("has_measurement") else "serious", "Measured" if t.get("has_measurement") else "No analytics",
-                        meter(checked - missing, checked) if checked else None))
+                        meter(share, 100), key="analytics_pct"))
     checked, failing = seo_counts(model["pages"])
     if checked:
         out.append(tile("SEO basics", "?sort=seo#pages", checked - failing, f"of {checked} pages pass title, "
                         "description, H1 and canonical checks", "warning" if failing else "good",
-                        plural(failing, "page") + " to fix" if failing else "All pass", meter(checked - failing, checked)))
+                        plural(failing, "page") + " to fix" if failing else "All pass", meter(checked - failing, checked), key="seo_pct"))
     t = raw["aeo"]
     if isinstance(t, dict):
         withld, checked = num(t.get("pages_with_json_ld")) or 0, num(t.get("pages_checked"))
@@ -610,12 +611,12 @@ def tiles(model, raw):
         out.append(tile("AEO structured data", "?sort=aeo#pages", f"{meter(withld, checked)['pct']}%" if checked else "—",
                         f"pages with JSON-LD · {plural(issues, 'issue type')}", "serious" if broken else "warning" if issues else "good",
                         plural(broken, "syntax error") if broken else plural(issues, "issue type") if issues else "No issues",
-                        meter(withld, checked)))
+                        meter(withld, checked), key="jsonld_pct"))
     t = raw["social-preview"]
     if isinstance(t, dict):
         issues = len(as_list(t.get("issue_summary")))
         out.append(tile("Social previews", "?sort=social#pages", issues, f"issue {'type' if issues == 1 else 'types'} · {t.get('pages_checked', 0)} pages checked",
-                        "warning" if issues else "good", "Needs work" if issues else "No issues"))
+                        "warning" if issues else "good", "Needs work" if issues else "No issues", key="social_issues"))
     t = raw["security"]
     if isinstance(t, dict):
         missing = as_list(t.get("missing_summary"))
@@ -625,7 +626,7 @@ def tiles(model, raw):
                         else "headers present on every page",
                         "critical" if t.get("https") is False else "warning" if missing else "good",
                         {True: "HTTPS", False: "Not all HTTPS"}.get(t.get("https"), "HTTPS unknown"),
-                        meter(SECURITY_CHECKS - len(missing), SECURITY_CHECKS)))
+                        meter(SECURITY_CHECKS - len(missing), SECURITY_CHECKS), key="security_headers"))
     t = raw["fonts"]
     if isinstance(t, dict):
         named = named_fonts(t)
@@ -633,19 +634,12 @@ def tiles(model, raw):
         out.append(tile("Fonts", "#site", families,
                         f"named {'family' if families == 1 else 'families'} · most used: {named[0]}" if named else "named families",
                         "warning" if families > FONT_FAMILIES_WARN else "good",
-                        "Many families" if families > FONT_FAMILIES_WARN else "Consistent"))
-    t = raw["measurement"]
-    if isinstance(t, dict):  # A yes/no fact, never scored.
-        pixels = ads_pixel(t)
-        out.append(tile("Ad pixels", "#site", "Yes" if pixels["present"] else "No",
-                        ", ".join(pixels["pixels"]) if pixels["present"] else
-                        "none seen; a tag manager may load one" if pixels["tag_manager"] else "no ad pixel from Meta, LinkedIn, Google Ads, TikTok, X, Bing or Pinterest",
-                        "neutral", "Not scored"))
+                        "Many families" if families > FONT_FAMILIES_WARN else "Consistent", key="font_families"))
     t = raw["meta_ads"] if model["meta_ads"] else None
     if isinstance(t, dict):
         out.append(tile("Meta ads", "#meta_ads", num(t.get("ad_count")) if "ad_count" in t else "—",
                         "ads in the Ad Library" if "ad_count" in t else str(t.get("reason") or ""),
-                        LEVEL.get(t.get("status"), "neutral"), str(t.get("status") or "")))
+                        LEVEL.get(t.get("status"), "neutral"), str(t.get("status") or ""), key="meta_ads"))
     rep = model["reputation"]
     if rep.get("scores") is not None:
         s = rep["scores"]
@@ -655,12 +649,79 @@ def tiles(model, raw):
                         (f"of {s.get('of')} companies" if rank else "unknown to the AI: needs more exposure"
                          if s.get("visibility") == "not_found" else "not named by the AI") + named,
                         "good" if rank == 1 else "warning" if rank else "serious",
-                        f"Sentiment {signed(as_dict(s.get('sentiment')).get('score'))}", meter(rate, 1)))
+                        f"Sentiment {signed(as_dict(s.get('sentiment')).get('score'))}", meter(rate, 1), key="ai_rank"))
     elif "legacy" in rep:
         out.append(tile("AI reputation", "#reputation", "—", "No ranking in this run"))
     elif "unknown" in rep:
         out.append(tile("AI reputation", "#reputation", "—", "The AI request failed", "neutral", "UNKNOWN"))
+    v = model["metrics"]
+    if isinstance(model["ai_search"].get("scores"), dict):
+        rank, rate = v.get("search_rank"), v.get("search_mention_rate")
+        out.append(tile("AI search", "#ai_search", f"#{rank}" if rank else "—",
+                        f"named in {rate}% of web-search answers" if rate is not None else "not named in web-search answers",
+                        "good" if rank == 1 else "warning" if rank else "serious", "", meter(rate, 100), key="search_rank"))
+    if "answered" in v:
+        total = num(as_dict(as_dict(raw["answer_coverage"]).get("summary")).get("questions"))
+        out.append(tile("Answer coverage", "#answers", v["answered"],
+                        f"of {plural(total, 'buyer question')} answered on the site" if total else "buyer questions answered on the site",
+                        "good" if total and v["answered"] >= total else "warning", "", meter(v["answered"], total), key="answered"))
+    if "practitioner_pages" in v:
+        people = num(as_dict(as_dict(raw["practitioners"]).get("summary")).get("practitioners")) or 0
+        out.append(tile("Practitioners", "#people", v["practitioner_pages"], f"of {plural(people, 'practitioner')} with their own page",
+                        "good" if people and v["practitioner_pages"] >= people else "warning" if people else "neutral", "",
+                        meter(v["practitioner_pages"], people), key="practitioner_pages"))
+    if "rating" in v or "reviews" in v:
+        out.append(tile("Google rating", "#listing", METRICS["rating"][2](v["rating"]) if "rating" in v else "—",
+                        plural(v.get("reviews") or 0, "review"), key="rating"))
     return out
+
+
+SPARK_RUNS, SPARK_W, SPARK_H = 12, 120, 28
+NOISY = {"ai_rank", "search_rank"}  # Model answers vary run to run even with the same questions.
+
+
+def spark(history, key):
+    """One metric's trend line. history: [(created_at, metrics)], oldest first, ending with this run. None when no run
+    measured it. A run without the metric is a gap; a lone point is a dot. delta and trend compare this run with the
+    newest earlier run that has the metric."""
+    label, higher, fmt = METRICS[key]
+    rows = history[-SPARK_RUNS:]
+    values = [num(m.get(key)) if isinstance(m, dict) else None for _, m in rows]
+    known = [v for v in values if v is not None]
+    if not known:
+        return None
+    lo, hi = min(known), max(known)
+    x = lambda i: round(3 + i * (SPARK_W - 6) / max(len(rows) - 1, 1), 1)
+    y = lambda v: round(SPARK_H - 3 - (v - lo) / (hi - lo) * (SPARK_H - 6), 1) if hi > lo else SPARK_H / 2
+    dots, segments, segment = [], [], []
+    for i, ((when, _), v) in enumerate(zip(rows, values)):
+        if v is None:
+            segments, segment = segments + [segment], []
+            continue
+        dots.append({"x": x(i), "y": y(v), "title": f"{str(when or '')[:10]} {fmt(v)}".strip()})
+        segment.append(f"{x(i)},{y(v)}")
+    now = values[-1]
+    before = next((v for v in reversed(values[:-1]) if v is not None), None)
+    delta = round(now - before, 1) if now is not None and before is not None else None
+    return {"dots": dots, "lines": [" ".join(s) for s in segments + [segment] if len(s) > 1],
+            "delta": f"{delta:+g}" if delta else None, "arrow": "▲" if delta and delta > 0 else "▼" if delta else "",
+            "trend": metric(label, before, now, higher)["trend"]}
+
+
+def facts(raw):
+    """Yes/no facts for the current-state row: (label, True/False/None when not checked, href, hover detail). This run
+    only; they aren't trended."""
+    yes = lambda v: v if isinstance(v, bool) else None
+    m, sec, g = raw["measurement"], raw["security"], raw["google_business"]
+    m = m if isinstance(m, dict) else None
+    pixels = ads_pixel(m) if m else None
+    pixel_detail = (", ".join(pixels["pixels"]) if pixels["present"] else "none seen; a tag manager may load one"
+                    if pixels["tag_manager"] else "no ad pixel from Meta, LinkedIn, Google Ads, TikTok, X, Bing or Pinterest") if m else ""
+    return [("Analytics", yes(m.get("has_measurement")) if m else None, "?sort=analytics#pages", ""),
+            ("Consent tool", yes(m.get("has_consent_tool")) if m else None, "?sort=analytics#pages", ""),
+            ("Ad pixel", pixels["present"] if m else None, "#site", pixel_detail),
+            ("HTTPS", yes(sec.get("https")) if isinstance(sec, dict) else None, "?sort=security#pages", ""),
+            ("Google listing", bool(g.get("found")) if isinstance(g, dict) and g.get("status") != "UNKNOWN" else None, "#listing", "")]
 
 
 def attention(model, raw):
@@ -1120,7 +1181,9 @@ def coverage(bundle, manifest, urls):
             "raw": [f for f in files if f.startswith(("technical/", "social/")) or "/" not in f]}
 
 
-def load(bundle, sort="issues", desc=False, earlier=None):
+def load(bundle, sort="issues", desc=False, earlier=None, history=()):
+    """history: [(created_at, metrics)] of this site's earlier runs, oldest first, for the trend lines; the web app
+    passes its stored snapshots. Default: none, so each tile shows only this run."""
     bundle = Path(bundle)
     manifest = read(bundle, "manifest.json")
     manifest = manifest if isinstance(manifest, dict) else {}
@@ -1166,5 +1229,10 @@ def load(bundle, sort="issues", desc=False, earlier=None):
     model["reputation"]["source"] = rep_source
     model["metrics"] = metrics(model, raw)
     model["tiles"] = tiles(model, raw)
+    runs = [*history, (manifest.get("created_at"), model["metrics"])]
+    for t in model["tiles"]:
+        t["trend"] = spark(runs, t["key"]) if t["key"] else None
+    model["facts"] = facts(raw)
+    model["ai_note"] = any(t["key"] in NOISY for t in model["tiles"])
     model["attention"] = attention(model, raw)
     return model

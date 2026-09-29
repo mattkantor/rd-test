@@ -197,7 +197,7 @@ class LoadTest(unittest.TestCase):
         self.assertEqual(m["report"]["md"].name, "report.md")
         tiles = {t["title"]: (t["value"], t["sub"], t["level"], t["status"], t["meter"]) for t in m["tiles"]}
         self.assertEqual(list(tiles), ["Pages crawled", "Report", "Accessibility (WCAG)", "Analytics", "SEO basics", "AEO structured data",
-                                       "Social previews", "Security headers", "Fonts", "Ad pixels", "AI reputation"])  # No Meta ads: not collected.
+                                       "Social previews", "Security headers", "Fonts", "AI reputation"])  # No Meta ads: not collected.
         self.assertEqual(tiles["Pages crawled"], (3, "of 50 limit · 1 skipped", "warning", "PARTIAL", {"pct": 6}))
         self.assertEqual((tiles["Report"][0], tiles["Report"][2], tiles["Report"][3]), (1, "warning", "1 WARNING"))
         self.assertEqual(tiles["AEO structured data"], ("67%", "pages with JSON-LD · 1 issue type", "warning", "1 issue type", {"pct": 67}))
@@ -237,6 +237,35 @@ class LoadTest(unittest.TestCase):
         self.assertEqual(m["a11y_findings"], 0)  # A bool isn't a count; the tile shows 0 too.
         self.assertNotIn("rating", m)
         self.assertEqual(m["reviews"], 12)
+
+    def test_trend_lines_deltas_and_gaps(self):
+        history = [("2026-07-01T00:00:00+00:00", {"seo_pct": 20, "a11y_findings": 0}), ("2026-08-01T00:00:00+00:00", {})]
+        trend = {t["title"]: t["trend"] for t in load(self.bundle, history=history)["tiles"]}
+        seo = trend["SEO basics"]
+        self.assertEqual((seo["delta"], seo["arrow"], seo["trend"]), ("+30", "▲", "better"))
+        self.assertEqual([d["title"] for d in seo["dots"]], ["2026-07-01 20%", "2026-09-23 50%"])
+        self.assertEqual(seo["lines"], [])  # The August run didn't measure it: a gap, not a line through it.
+        a11y = trend["Accessibility (WCAG)"]
+        self.assertEqual((a11y["delta"], a11y["arrow"], a11y["trend"]), ("+1", "▲", "worse"))  # More barriers is worse.
+        self.assertIsNone(trend["Report"])  # Not trended.
+        line = {t["title"]: t["trend"] for t in load(self.bundle, history=history[:1])["tiles"]}["SEO basics"]
+        self.assertEqual([len(points.split()) for points in line["lines"]], [2])
+        flat = {t["title"]: t["trend"] for t in load(self.bundle, history=[(None, {"seo_pct": 50})])["tiles"]}["SEO basics"]
+        self.assertEqual((flat["delta"], flat["trend"], {d["y"] for d in flat["dots"]}), (None, "same", {14.0}))
+        self.assertEqual(flat["dots"][0]["title"], "50%")  # No date for that run.
+        first = {t["title"]: t["trend"] for t in load(self.bundle)["tiles"]}["SEO basics"]
+        self.assertEqual((len(first["dots"]), first["delta"], first["trend"]), (1, None, None))
+
+    def test_metric_missing_this_run_has_no_delta(self):
+        trend = {t["title"]: t["trend"] for t in load(self.bundle, history=[(None, {"analytics_pct": 80})])["tiles"]}
+        self.assertEqual((len(trend["Analytics"]["dots"]), trend["Analytics"]["delta"]), (1, None))
+
+    def test_state_row_shows_yes_no_facts(self):
+        m = load(self.bundle)
+        self.assertEqual([(label, value) for label, value, _, _ in m["facts"]],
+                         [("Analytics", True), ("Consent tool", False), ("Ad pixel", True), ("HTTPS", True), ("Google listing", None)])
+        self.assertEqual(m["facts"][2][3], "Meta Pixel")
+        self.assertTrue(m["ai_note"])
 
     def test_sections(self):
         m = load(self.bundle)
