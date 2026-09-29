@@ -74,6 +74,14 @@ Each numeric tile keeps its title, value, sub-line, level and link, and adds:
 
 Viewing an older run shows history up to that run only.
 
+**Refined during planning:**
+- The Analytics tile stays, showing `analytics_pct` as its trended value; its yes/no and consent parts move to the state
+  row. Only the Ad pixels tile is removed (its detail becomes the state row's hover text).
+- One sparkline per tile, on the tile's primary metric. Secondary metrics (`aeo_issues`, `ai_mention_rate`,
+  `ai_sentiment`, `search_mention_rate`, `reviews`) are stored so history isn't lost; their change shows in the Changes tab.
+- AI search, Answer coverage, Practitioners and Google rating get a tile, each only when that check ran.
+- The AI noise note is one line under the tile grid, not repeated on each tile.
+
 ## Page structure
 
 Overview becomes: Anomalies → current-state row → trend tiles → findings (unchanged).
