@@ -1,8 +1,10 @@
 """Jinja2 environment for the home page and dashboard templates."""
+import os
 from datetime import datetime
 from urllib.parse import quote
 
 from django.conf import settings
+from django.contrib.staticfiles import finders
 from django.templatetags.static import static
 from jinja2 import Environment
 
@@ -22,8 +24,15 @@ def file_url(path):
     return "/files/" + quote(path.relative_to(settings.COMPANYSCAN_OUTPUT).as_posix())
 
 
+def versioned(path):
+    """static() plus the file's modification time, so a changed stylesheet or script isn't served from the browser's
+    cache."""
+    found = finders.find(path)
+    return f"{static(path)}?v={int(os.path.getmtime(found))}" if found else static(path)
+
+
 def environment(**options):
     env = Environment(**options)
-    env.globals["static"] = static
+    env.globals["static"] = versioned
     env.filters.update(local_time=local_time, file_url=file_url, href=dashboard.link, badge=dashboard.badge)
     return env

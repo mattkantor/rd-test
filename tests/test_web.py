@@ -319,6 +319,10 @@ class WebTests(WebCase):
         self.client.get("/")  # sync()
         page = self.client.get(f"/site/{Site.objects.get(origin='https://acme.test').pk}").text
         self.assertIn('<svg class="spark"', page)
+        # Colours live on the SVG itself, so a stale cached stylesheet can't turn the chart black.
+        self.assertIn('<polyline style="fill:none;stroke:var(--accent, #ff6106);stroke-width:1.5"', page)
+        self.assertIn('<polygon style="fill:var(--accent, #ff6106);fill-opacity:.15"', page)
+        self.assertRegex(page, r'href="/static/app\.css\?v=\d+"')  # Changes to the CSS reach the browser.
         self.assertIn('<p class="trend trend-better">+2 ▲</p>', page)  # 4/6 then 6/6 security headers.
         self.assertIn("<title>2026-01-01 4/6</title>", page)
         self.assertIn('<ul class="facts"', page)
