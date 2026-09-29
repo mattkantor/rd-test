@@ -223,6 +223,21 @@ class LoadTest(unittest.TestCase):
         self.assertEqual([r["width"] for r in board], [100, 100])
         self.assertEqual(m["reputation"]["scores"]["diverging"], {"left": 50, "width": 21.0, "sign": "pos"})
 
+    def test_metrics_are_what_the_run_measured(self):
+        m = load(self.bundle)
+        # No copy-scores, measurement pages_checked, meta_ads, ai_search or listing in the fixture: absent, not 0.
+        self.assertEqual(m["metrics"], {"pages": 3, "a11y_findings": 1, "seo_pct": 50, "jsonld_pct": 67, "aeo_issues": 1,
+                                        "social_issues": 0, "security_headers": 5, "font_families": 1,
+                                        "ai_rank": 1, "ai_mention_rate": 100, "ai_sentiment": 42})
+
+    def test_metrics_ignore_wrong_shaped_values(self):
+        write(self.bundle, "technical/accessibility.json", {"finding_count": True, "pages_checked": 3})
+        write(self.bundle, "technical/google_business.json", {"status": "OBSERVED", "found": True, "reviews": {"rating": "4.8", "count": 12}})
+        m = load(self.bundle)["metrics"]
+        self.assertEqual(m["a11y_findings"], 0)  # A bool isn't a count; the tile shows 0 too.
+        self.assertNotIn("rating", m)
+        self.assertEqual(m["reviews"], 12)
+
     def test_sections(self):
         m = load(self.bundle)
         site = {c["title"]: c for c in m["site"]}

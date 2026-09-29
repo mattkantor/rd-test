@@ -461,6 +461,109 @@ def tile(title, href, value, sub="", level="neutral", status="", bar=None):
     return {"title": title, "href": href, "value": value, "sub": sub, "level": level, "status": status, "meter": bar}
 
 
+def pct(v):
+    return f"{v}%"
+
+
+# Each run's headline numbers: key -> (label, higher_is_better, how to show a value). higher_is_better None: neither
+# direction is good or bad (the change shows grey). sync() stores these per run for the trend lines.
+METRICS = {
+    "pages": ("Pages crawled", None, str),
+    "a11y_findings": ("Accessibility barriers", False, str),
+    "ai_slop": ("AI slop (median)", False, str),
+    "marketing_bias": ("Marketing bias (median)", False, str),
+    "analytics_pct": ("Pages with analytics", True, pct),
+    "seo_pct": ("Pages passing SEO basics", True, pct),
+    "jsonld_pct": ("Pages with JSON-LD", True, pct),
+    "aeo_issues": ("Structured-data issue types", False, str),
+    "social_issues": ("Social preview issue types", False, str),
+    "security_headers": ("Security headers present", True, lambda v: f"{v}/{SECURITY_CHECKS}"),
+    "font_families": ("Named font families", False, str),
+    "meta_ads": ("Meta ads running", None, str),
+    "ai_rank": ("AI reputation rank", False, lambda v: f"#{v}"),
+    "ai_mention_rate": ("AI mention rate", True, pct),
+    "ai_sentiment": ("AI sentiment", True, lambda v: f"{v:+g}"),
+    "search_rank": ("AI search rank", False, lambda v: f"#{v}"),
+    "search_mention_rate": ("AI search mention rate", True, pct),
+    "answered": ("Buyer questions answered", True, str),
+    "practitioner_pages": ("Practitioners with their own page", True, str),
+    "rating": ("Google rating", True, lambda v: f"{v}★"),
+    "reviews": ("Google reviews", True, str),
+}
+
+
+def seo_counts(pages):
+    """(pages the SEO checks ran on, pages with an SEO problem), from the page cards."""
+    checked = [c for c in pages if any(a["name"] == "SEO" and a["level"] != "neutral" for a in c["areas"])]
+    failing = [c for c in checked if any(a["name"] == "SEO" and RANK[a["level"]] < RANK["neutral"] for a in c["areas"])]
+    return len(checked), len(failing)
+
+
+def metrics(model, raw):
+    """This run's number for each METRICS key it measured. A key it didn't measure is left out, never 0, so a trend line
+    shows a gap rather than a false drop. The tiles show these; sync() stores them."""
+    out = {}
+
+    def put(key, value):
+        if num(value) is not None:
+            out[key] = value
+
+    put("pages", num(as_dict(model["manifest"].get("counts")).get("pages")) or 0)
+    t = raw["accessibility"]
+    if isinstance(t, dict):
+        put("a11y_findings", num(t.get("finding_count")) or 0)
+    t = raw["copy-scores"]
+    if isinstance(t, dict):
+        for key, _ in COPY.values():
+            put(key, as_dict(t.get(key)).get("median"))
+    t = raw["measurement"]
+    if isinstance(t, dict):
+        checked, missing = num(t.get("pages_checked")), num(t.get("pages_without_any_measurement_count")) or 0
+        if checked:
+            put("analytics_pct", meter(checked - missing, checked)["pct"])
+    checked, failing = seo_counts(model["pages"])
+    if checked:
+        put("seo_pct", meter(checked - failing, checked)["pct"])
+    t = raw["aeo"]
+    if isinstance(t, dict):
+        checked = num(t.get("pages_checked"))
+        if checked:
+            put("jsonld_pct", meter(num(t.get("pages_with_json_ld")) or 0, checked)["pct"])
+        put("aeo_issues", len(as_list(t.get("issue_summary"))))
+    t = raw["social-preview"]
+    if isinstance(t, dict):
+        put("social_issues", len(as_list(t.get("issue_summary"))))
+    t = raw["security"]
+    if isinstance(t, dict):
+        put("security_headers", max(SECURITY_CHECKS - len(as_list(t.get("missing_summary"))), 0))
+    t = raw["fonts"]
+    if isinstance(t, dict):
+        put("font_families", len(named_fonts(t)))
+    t = raw["meta_ads"] if model["meta_ads"] else None
+    if isinstance(t, dict):
+        put("meta_ads", t.get("ad_count"))
+    for prefix, rep in (("ai", model["reputation"]), ("search", model["ai_search"])):
+        s = rep.get("scores")
+        if isinstance(s, dict):
+            put(f"{prefix}_rank", s.get("rank") or None)  # 0/None: not named, so no rank to chart.
+            rate = num(s.get("mention_rate"))
+            put(f"{prefix}_mention_rate", round(rate * 100) if rate is not None else None)
+            if prefix == "ai":
+                put("ai_sentiment", as_dict(s.get("sentiment")).get("score"))
+    t = raw["answer_coverage"]
+    if isinstance(t, dict) and t.get("status") != "UNKNOWN":
+        put("answered", as_dict(t.get("summary")).get("answered"))
+    t = raw["practitioners"]
+    if isinstance(t, dict) and t.get("status") != "UNKNOWN":
+        put("practitioner_pages", as_dict(t.get("summary")).get("with_dedicated_page"))
+    t = raw["google_business"]
+    if isinstance(t, dict) and t.get("found"):
+        reviews = as_dict(t.get("reviews"))
+        put("rating", reviews.get("rating"))
+        put("reviews", reviews.get("count"))
+    return out
+
+
 def tiles(model, raw):
     m, h, out = model["manifest"], model["header"], []
     counts = as_dict(m.get("counts"))
@@ -495,12 +598,11 @@ def tiles(model, raw):
                         "tools · " + ("consent tool found" if t.get("has_consent_tool") else "no consent tool"),
                         "good" if t.get("has_measurement") else "serious", "Measured" if t.get("has_measurement") else "No analytics",
                         meter(checked - missing, checked) if checked else None))
-    seo = [c for c in model["pages"] if any(a["name"] == "SEO" and RANK[a["level"]] < RANK["neutral"] for a in c["areas"])]
-    checked = [c for c in model["pages"] if any(a["name"] == "SEO" and a["level"] != "neutral" for a in c["areas"])]
+    checked, failing = seo_counts(model["pages"])
     if checked:
-        out.append(tile("SEO basics", "?sort=seo#pages", len(checked) - len(seo), f"of {len(checked)} pages pass title, "
-                        "description, H1 and canonical checks", "warning" if seo else "good",
-                        plural(len(seo), "page") + " to fix" if seo else "All pass", meter(len(checked) - len(seo), len(checked))))
+        out.append(tile("SEO basics", "?sort=seo#pages", checked - failing, f"of {checked} pages pass title, "
+                        "description, H1 and canonical checks", "warning" if failing else "good",
+                        plural(failing, "page") + " to fix" if failing else "All pass", meter(checked - failing, checked)))
     t = raw["aeo"]
     if isinstance(t, dict):
         withld, checked = num(t.get("pages_with_json_ld")) or 0, num(t.get("pages_checked"))
@@ -1062,6 +1164,7 @@ def load(bundle, sort="issues", desc=False, earlier=None):
         "coverage": coverage(bundle, manifest, urls),
     }
     model["reputation"]["source"] = rep_source
+    model["metrics"] = metrics(model, raw)
     model["tiles"] = tiles(model, raw)
     model["attention"] = attention(model, raw)
     return model
