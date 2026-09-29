@@ -159,7 +159,7 @@
       <p class="sub">{{ t.sub }}</p>
       {% if t.status %}{{ chip(t.level, t.status) }}{% endif %}
       {% if t.trend %}
-      <p class="trend trend-{{ t.trend.trend or 'none' }}">{% if t.trend.delta %}{{ t.trend.delta }} {{ t.trend.arrow }}{% elif t.trend.trend == "same" %}No change{% else %}First run{% endif %}</p>
+      <p class="trend trend-{{ t.trend.trend or 'none' }}">{% if t.trend.missing %}Not measured this run{% elif t.trend.delta %}{{ t.trend.delta }} {{ t.trend.arrow }}{% elif t.trend.trend == "same" %}No change{% else %}First run{% endif %}</p>
       <svg class="spark" viewBox="0 0 120 28" role="img" aria-label="{{ t.title }} over the last {{ t.trend.dots | length }} measured runs">{% for points in t.trend.lines %}<polyline points="{{ points }}"/>{% endfor %}{% for d in t.trend.dots %}<circle cx="{{ d.x }}" cy="{{ d.y }}" r="3"><title>{{ d.title }}</title></circle>{% endfor %}</svg>
       {% endif %}
     </a>

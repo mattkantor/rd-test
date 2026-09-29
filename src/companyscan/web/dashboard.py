@@ -1,5 +1,6 @@
 """Dashboard view model: read one crawl bundle into plain dicts the template lays out. Captured data is untrusted."""
 import json
+import math
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -445,7 +446,8 @@ def plural(n, word):
 
 
 def num(value):
-    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+    """A real, finite number, else None (bools, strings, and the NaN/Infinity json.loads accepts)."""
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) else None
 
 
 def meter(part, whole):
@@ -543,7 +545,9 @@ def metrics(model, raw):
     t = raw["meta_ads"] if model["meta_ads"] else None
     if isinstance(t, dict):
         put("meta_ads", t.get("ad_count"))
-    for prefix, rep in (("ai", model["reputation"]), ("search", model["ai_search"])):
+    # A reputation-only run filling in for this crawl is another run's measurement, of any date: shown, not stored.
+    own = [("ai", model["reputation"])] if not model["reputation"].get("source") else []
+    for prefix, rep in own + [("search", model["ai_search"])]:
         s = rep.get("scores")
         if isinstance(s, dict):
             put(f"{prefix}_rank", s.get("rank") or None)  # 0/None: not named, so no rank to chart.
@@ -702,10 +706,11 @@ def spark(history, key):
         segment.append(f"{x(i)},{y(v)}")
     now = values[-1]
     before = next((v for v in reversed(values[:-1]) if v is not None), None)
-    delta = round(now - before, 1) if now is not None and before is not None else None
+    delta = round(now - before, 2) if now is not None and before is not None else None
     return {"dots": dots, "lines": [" ".join(s) for s in segments + [segment] if len(s) > 1],
             "delta": f"{delta:+g}" if delta else None, "arrow": "▲" if delta and delta > 0 else "▼" if delta else "",
-            "trend": metric(label, before, now, higher)["trend"]}
+            "trend": metric(label, before, now, higher)["trend"],
+            "missing": now is None and before is not None}  # Measured before, not this run: not a first run.
 
 
 def facts(raw):

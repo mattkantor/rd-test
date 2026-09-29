@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from companyscan.web.dashboard import MISSING, UNREADABLE, describe, link, load, read, since_last, table
+from companyscan.web.dashboard import MISSING, UNREADABLE, describe, link, load, read, since_last, spark, table
 
 SCORED = {
     "status": "COMPLETE", "domain": "acme.test", "error": None,
@@ -259,6 +259,18 @@ class LoadTest(unittest.TestCase):
     def test_metric_missing_this_run_has_no_delta(self):
         trend = {t["title"]: t["trend"] for t in load(self.bundle, history=[(None, {"analytics_pct": 80})])["tiles"]}
         self.assertEqual((len(trend["Analytics"]["dots"]), trend["Analytics"]["delta"]), (1, None))
+        self.assertTrue(trend["Analytics"]["missing"])  # Measured before, not now: not a "first run".
+        self.assertFalse({t["title"]: t["trend"] for t in load(self.bundle)["tiles"]}["SEO basics"]["missing"])
+
+    def test_small_float_changes_keep_their_delta(self):
+        s = spark([(None, {"rating": 4.42}), (None, {"rating": 4.44})], "rating")
+        self.assertEqual((s["delta"], s["arrow"], s["trend"]), ("+0.02", "\u25b2", "better"))
+
+    def test_non_finite_numbers_are_not_metrics(self):
+        write(self.bundle, "technical/copy-scores.json", '{"ai_slop": {"median": NaN}, "marketing_bias": {"median": Infinity}}')
+        m = load(self.bundle)["metrics"]
+        self.assertNotIn("ai_slop", m)
+        self.assertNotIn("marketing_bias", m)
 
     def test_state_row_shows_yes_no_facts(self):
         m = load(self.bundle)
@@ -415,6 +427,8 @@ class LoadTest(unittest.TestCase):
         m = load(self.bundle)
         self.assertEqual((m["reputation"]["scores"]["rank"], m["reputation"]["source"]["dir"]), (1, "acme.test-reputation-new"))
         self.assertIn("AI reputation", [t["title"] for t in m["tiles"]])
+        # Another run's measurement, of whatever date: shown, but not stored as this crawl's numbers.
+        self.assertFalse({"ai_rank", "ai_mention_rate", "ai_sentiment"} & set(m["metrics"]))
         (self.bundle / "technical").mkdir(exist_ok=True)
         write(self.bundle, "technical/llm_reputation.json", {**SCORED, "scores": {**SCORED["scores"], "rank": 2}})
         self.assertEqual((load(self.bundle)["reputation"]["scores"]["rank"], load(self.bundle)["reputation"]["source"]),

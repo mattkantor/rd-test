@@ -219,10 +219,10 @@ def sync(root=None):
         seen.append(manifest.parent.name)
         if manifest.parent.name not in snapped:
             checks = {name: snapshot(name, load_json(manifest.parent / f"technical/{name}.json")) for name in SNAPSHOT}
-            Snapshot.objects.create(site=Site.objects.get(origin=site), name=manifest.parent.name,
-                                    created_at=parse_time(data.get("created_at")),
-                                    checks={name: data for name, data in checks.items() if data},
-                                    metrics=load(manifest.parent)["metrics"])
+            # get_or_create: the worker's sync and a page's may both find this run new; the second keeps the first's.
+            Snapshot.objects.get_or_create(name=manifest.parent.name, defaults={
+                "site": Site.objects.get(origin=site), "created_at": parse_time(data.get("created_at")),
+                "checks": {name: data for name, data in checks.items() if data}, "metrics": load(manifest.parent)["metrics"]})
         elif manifest.parent.name in unmeasured:
             Snapshot.objects.filter(name=manifest.parent.name).update(metrics=load(manifest.parent)["metrics"])
     Run.objects.exclude(name__in=seen).delete()
