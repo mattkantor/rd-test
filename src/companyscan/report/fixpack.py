@@ -87,9 +87,11 @@ class Run:
         return list(unique.values())
 
 
-def task(slug, title, area, findings, wrong, do, done, dont, data=None):
-    """A task, or None when there's nothing to fix: no evidence and no report finding. wrong: markdown lines."""
-    if not wrong and not findings:
+def task(slug, title, area, findings, wrong, do, done, dont, data=None, needs_evidence=False):
+    """A task, or None when there's nothing to fix: no evidence and no report finding. wrong: markdown lines.
+    needs_evidence: a task that works through a list is only made when the scan found list items; a report finding on
+    its own (often a limitation, such as "conformance unknown") goes to Also noted instead."""
+    if not wrong and (needs_evidence or not findings):
         return None
     return {"slug": slug, "title": title, "area": area, "findings": findings, "wrong": wrong, "do": do, "done": done,
             "dont": dont, "data": data}
@@ -170,7 +172,7 @@ def seo(run):
                 [f"Every page in `data/seo.json` has a 1–{TITLE_MAX} character title, a {DESCRIPTION_MIN}–{DESCRIPTION_MAX} "
                  "character meta description, exactly one H1 and a canonical link."],
                 ["Don't change any page's URL.", "Don't write a description that promises what the page doesn't say."],
-                rows or None)
+                rows or None, needs_evidence=True)
 
 
 def structured_data(run):
@@ -188,7 +190,7 @@ def structured_data(run):
                  "Keep one stable `@id` per organisation or person across pages."],
                 ["Every `<script type=\"application/ld+json\">` on the listed pages parses as JSON.",
                  "Each property named in `data/structured-data.json` is present on its page, or has a TODO(owner)."],
-                ["Don't add ratings, reviews or offers the business doesn't have."], rows or None)
+                ["Don't add ratings, reviews or offers the business doesn't have."], rows or None, needs_evidence=True)
 
 
 def social(run):
@@ -204,7 +206,7 @@ def social(run):
                  "`TODO(owner): a 1200×630 share image` in OWNER-TODO.md.",
                  "Keep `og:description` to about 200 characters so it isn't cut off."],
                 ["Each page in `data/social-previews.json` has `og:title`, `og:description` and an absolute `og:image`."],
-                ["Don't use an image the site doesn't own."], rows or None)
+                ["Don't use an image the site doesn't own."], rows or None, needs_evidence=True)
 
 
 def accessibility(run):
@@ -219,7 +221,7 @@ def accessibility(run):
                  "Alt text says what the image shows or does; decorative images get `alt=\"\"`.",
                  "Links and buttons get visible text, or an `aria-label` saying where they go or what they do."],
                 ["Every item in `data/accessibility.json` is resolved on its page."],
-                ["Don't hide content from screen readers to silence a check."], rows or None)
+                ["Don't hide content from screen readers to silence a check."], rows or None, needs_evidence=True)
 
 
 def questions(run):
@@ -239,7 +241,7 @@ def questions(run):
                 ["Every question in `data/questions.json` is answered on the site or has a TODO(owner) in place.",
                  "Any `FAQPage` JSON-LD parses and matches the visible text."],
                 ["Don't invent prices, timelines, client names, numbers or guarantees.", "Don't copy another site's wording."],
-                rows or None)
+                rows or None, needs_evidence=True)
 
 
 def slop(run):
@@ -262,10 +264,13 @@ def slop(run):
                  "Keep the site's voice (first person if it uses it) and every fact, link and heading anchor."],
                 ["Every example quoted in `data/slop.json` is gone or rewritten.",
                  "No fact, price, link or heading anchor was lost from a rewritten page."],
-                ["Don't add facts that aren't on the site.", "Don't rewrite pages that aren't listed."], rows or None)
+                ["Don't add facts that aren't on the site.", "Don't rewrite pages that aren't listed."], rows or None, needs_evidence=True)
 
 
 def persuasion(run):
+    # The report's lever verdicts are a reviewed judgment; they count a lever present even when the scanner's
+    # pattern match missed it.
+    verdicts = {clean(v.get("url")): obj(v.get("lever_verdicts")) for v in items(obj(obj(run.analysis.get("copy")).get("scores")).get("pages"))}
     rows = []
     for p in run.pages:
         b = obj(obj(p.get("copy_scores")).get("marketing_bias"))
@@ -273,7 +278,8 @@ def persuasion(run):
         if not isinstance(score, (int, float)):
             continue
         missing = [words for name, words in (("loss_aversion", "the cost of doing nothing"), ("authority", "proof or credentials"))
-                   if not obj(signals.get(name)).get("subscore")]
+                   if not obj(signals.get(name)).get("subscore")
+                   and str(verdicts.get(clean(p["url"]), {}).get(name) or "").lower() in ("", "absent", "missing", "none")]
         if label in KEY_PAGES and (score < FLAT or missing):
             rows.append({"url": clean(p["url"]), "page": clean(label), "kind": "flat", "score": score, "missing": missing, "examples": []})
         elif score >= PUSHY:
@@ -297,7 +303,7 @@ def persuasion(run):
                 ["Each `flat` page has an outcome, proof (or a TODO(owner)), the cost of doing nothing and one call to action.",
                  "No claim quoted in `data/persuasion.json` remains without support."],
                 ["Don't invent testimonials, numbers, clients, awards, deadlines or scarcity.",
-                 "Don't add a second primary call to action to a page."], rows or None)
+                 "Don't add a second primary call to action to a page."], rows or None, needs_evidence=True)
 
 
 def practitioners(run):
@@ -316,7 +322,7 @@ def practitioners(run):
                  "Link the page from the about or team page."],
                 ["Each person in `data/practitioners.json` has a page with `Person` JSON-LD that parses, with `sameAs` "
                  "links or a TODO(owner) for the missing profile URLs."],
-                ["Don't invent credentials, degrees or employers."], rows or None)
+                ["Don't invent credentials, degrees or employers."], rows or None, needs_evidence=True)
 
 
 BUILDERS = (analytics, security, seo, structured_data, social, accessibility, questions, slop, persuasion, practitioners)

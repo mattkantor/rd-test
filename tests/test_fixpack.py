@@ -33,6 +33,9 @@ def site(root, clean=False):
     put(d, "technical/measurement.json", {"has_measurement": True, "has_consent_tool": True, "tools": [{"tool": "Google tag"}],
                                           "pages_without_any_measurement": []} if clean else
         {"has_measurement": False, "has_consent_tool": False, "tools": [], "pages_without_any_measurement": ["https://acme.test/"]})
+    if not clean:
+        put(d, "technical/aeo.json", {"issues": [{"url": "https://acme.test/", "severity": "error",
+                                                  "message": "LocalBusiness is missing required 'address'"}]})
     put(d, "technical/security.json", {"https": True, "missing_summary": [] if clean else [{"header": "content-security-policy", "pages": 1}]})
     put(d, "technical/answer_coverage.json", {"status": "COMPLETE", "questions": [
         {"question": "How much does a cleaning cost?", "coverage": "answered" if clean else "missing", "best_url": None, "gap": "No price"}]})
@@ -161,3 +164,22 @@ class FixPackTest(unittest.TestCase):
         with contextlib.redirect_stdout(out):
             main(["fixpack", str(d), "--json"])
         self.assertEqual(json.loads(out.getvalue())["status"], "ERROR")
+
+    def test_a_finding_alone_doesnt_make_a_list_task(self):
+        d = site(self.root)
+        analysis = json.loads((d / "analysis/analysis.json").read_text())
+        analysis["findings"].append({"id": "A1", "title": "Accessibility conformance unknown; automated static checks only",
+                                     "severity": "WARNING"})
+        put(d, "analysis/analysis.json", analysis)
+        files = fixpack.build(d)  # No accessibility.json: nothing on the site to fix.
+        self.assertNotIn("accessibility", self.tasks(files))
+        self.assertIn("`A1` `Accessibility conformance unknown", files["START.md"])
+
+    def test_report_lever_verdicts_count_as_present(self):
+        d = site(self.root)
+        analysis = json.loads((d / "analysis/analysis.json").read_text())
+        analysis["copy"] = {"scores": {"pages": [{"url": "https://acme.test/",
+                                                  "lever_verdicts": {"loss_aversion": "present", "authority": "present"}}]}}
+        put(d, "analysis/analysis.json", analysis)
+        row = json.loads(fixpack.build(d)["data/persuasion.json"])[0]
+        self.assertEqual((row["kind"], row["missing"]), ("flat", []))  # Still under FLAT, but not missing those levers.
