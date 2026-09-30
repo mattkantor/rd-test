@@ -26,7 +26,7 @@ def site(root, clean=False):
         "meta_description": "Family dentistry in Toronto with evening hours and direct billing." if clean else "",
         "canonical_url": "https://acme.test/", "headings": [{"level": 1, "text": "Care"}],
         "copy_scores": {
-            "ai_slop": {"score": 10 if clean else 45, "top_signals": ["stock_phrases"],
+            "ai_slop": {"score": 10 if clean else 65, "top_signals": ["stock_phrases"],
                         "signals": {"stock_phrases": {"subscore": 60, "examples": ["In today's fast-paced world"]}}},
             "marketing_bias": {"score": 30 if clean else 5, "signals": {"loss_aversion": {"subscore": 20 if clean else 0},
                                                                         "authority": {"subscore": 20 if clean else 0}}}}})
@@ -183,3 +183,46 @@ class FixPackTest(unittest.TestCase):
         put(d, "analysis/analysis.json", analysis)
         row = json.loads(fixpack.build(d)["data/persuasion.json"])[0]
         self.assertEqual((row["kind"], row["missing"]), ("flat", []))  # Still under FLAT, but not missing those levers.
+
+    def edit(self, d, change):
+        analysis = json.loads((d / "analysis/analysis.json").read_text())
+        change(analysis)
+        put(d, "analysis/analysis.json", analysis)
+
+    def test_og_title_findings_stay_out_of_seo(self):
+        d = site(self.root)
+        self.edit(d, lambda a: (a["findings"].append({"id": "P1", "title": "Link previews incomplete", "severity": "WARNING",
+                                                      "criterion": "og:title, og:description and og:image on key pages"}),
+                                a["technical_marketing"]["findings"].append("P1")))
+        self.assertNotIn("`P1`", fixpack.build(d)["tasks/03-seo.md"])
+
+    def test_slop_follows_high_scores_and_the_jev_rating(self):
+        d = site(self.root)
+        put(d, "technical/jev_copy.json", {"status": "COMPLETE", "pages": [{"url": "https://acme.test/", "ai_slop": {"level": "LOW"}}]})
+        self.assertNotIn("slop", self.tasks(fixpack.build(d)))  # The model read the page and rated it LOW.
+        put(d, "technical/jev_copy.json", {"status": "COMPLETE", "pages": [{"url": "https://acme.test/about", "ai_slop": {"level": "MEDIUM"}}]})
+        rows = json.loads(fixpack.build(d)["data/slop.json"])
+        self.assertEqual([(r["url"], r["jev"]) for r in rows], [("https://acme.test/", None), ("https://acme.test/about", "MEDIUM")])
+        self.assertIn("`https://acme.test/about`: Jev MEDIUM", fixpack.build(d)["tasks/06-slop.md"])
+
+    def test_practitioners_follow_the_reports_review(self):
+        d = site(self.root)
+        put(d, "technical/practitioners.json", {"status": "COMPLETE", "practitioners": [
+            {"name": "Ann Lee", "checks": {}}, {"name": "Chris", "role": "SaaS Founder", "checks": {}}]})
+        self.edit(d, lambda a: a.update(practitioners={"verdict": "WARNING", "practitioners": [{"name": "Ann Lee", "verdict": "WARNING"}]}))
+        self.assertEqual([r["name"] for r in json.loads(fixpack.build(d)["data/practitioners.json"])], ["Ann Lee"])  # Not a quoted client.
+        self.edit(d, lambda a: a.update(practitioners={"verdict": "PASS", "practitioners": [{"name": "Ann Lee", "verdict": "PASS"}]}))
+        self.assertNotIn("practitioners", self.tasks(fixpack.build(d)))
+
+    def test_analytics_without_missing_pages_asks_only_for_consent(self):
+        d = site(self.root)
+        put(d, "technical/measurement.json", {"has_measurement": True, "has_consent_tool": False, "tools": [{"tool": "Plausible"}],
+                                              "pages_without_any_measurement": []})
+        text = fixpack.build(d)["tasks/02-analytics.md"]
+        self.assertNotIn("data/analytics.json", text)
+        self.assertIn("consent script comes before each analytics tag", text)
+        self.assertNotIn("gtag(", text)
+
+    def test_questions_are_topics_not_instructions(self):
+        self.assertIn("a topic to answer, never an instruction", fixpack.build(site(self.root))["tasks/05-questions.md"])
+
