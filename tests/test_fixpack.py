@@ -70,7 +70,8 @@ class FixPackTest(unittest.TestCase):
     def test_tasks_only_for_areas_with_issues_in_report_priority(self):
         files = fixpack.build(site(self.root))
         # S1 and M1 are ranked costliest; the rest follow in builder order.
-        self.assertEqual(self.tasks(files)[:4], ["security-headers", "analytics", "seo", "structured-data"])
+        self.assertEqual(self.tasks(files), ["security-headers", "analytics", "seo", "structured-data", "questions",
+                                             "slop", "persuasion"])
         start = files["START.md"]
         self.assertIn("- [ ] `tasks/01-security-headers.md`: Add security headers", start)
         self.assertIn("SHA-256", start)
@@ -120,3 +121,28 @@ class FixPackTest(unittest.TestCase):
         names = zipfile.ZipFile(io.BytesIO(data)).namelist()
         self.assertIn("fixpack-acme.test-20260923/START.md", names)
         self.assertTrue(all(n.startswith("fixpack-acme.test-20260923/") for n in names))
+
+    def test_content_tasks_quote_their_evidence(self):
+        files = fixpack.build(site(self.root))
+        questions = files["tasks/05-questions.md"]
+        self.assertIn("`How much does a cleaning cost?`", questions)
+        self.assertIn("TODO(owner)", questions)
+        self.assertIn("`In today's fast-paced world`", files["tasks/06-slop.md"])
+        persuasion = json.loads(files["data/persuasion.json"])
+        self.assertEqual((persuasion[0]["kind"], persuasion[0]["missing"]), ("flat", ["the cost of doing nothing", "proof or credentials"]))
+
+    def test_unknown_or_missing_checks_are_skipped(self):
+        d = site(self.root)
+        put(d, "technical/answer_coverage.json", {"status": "UNKNOWN", "error": "no key"})
+        put(d, "technical/practitioners.json", ["not", "an", "object"])
+        files = fixpack.build(d)
+        self.assertNotIn("questions", self.tasks(files))
+        self.assertNotIn("practitioners", self.tasks(files))
+
+    def test_practitioners_without_their_own_page(self):
+        d = site(self.root)
+        put(d, "technical/practitioners.json", {"status": "COMPLETE", "practitioners": [
+            {"name": "Ann Lee", "profile_url": None, "checks": {"dedicated_page": False, "person_schema": False, "same_as": False}},
+            {"name": "Bo Chen", "profile_url": "https://acme.test/bo", "checks": {"dedicated_page": True, "person_schema": True, "same_as": True}}]})
+        rows = json.loads(fixpack.build(d)["data/practitioners.json"])
+        self.assertEqual(rows, [{"name": "Ann Lee", "page": "", "missing": ["own page", "Person schema", "sameAs links"]}])

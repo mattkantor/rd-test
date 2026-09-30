@@ -18,6 +18,9 @@ QUOTE_MAX, LIST_MAX = 300, 10  # Characters per quote; bullets shown in a task b
 TITLE_MAX, DESCRIPTION_MIN, DESCRIPTION_MAX = 60, 50, 160  # ponytail: common search-snippet lengths.
 PROFILE = (("company_name", "Business"), ("icp", "Ideal customer"), ("location", "Location"), ("category", "Category"),
            ("person", "People"), ("alias", "Other names"), ("known_profile", "Official profiles"))
+SLOP_FLOOR = 30  # copy_scores ai_slop MEDIUM and up.
+FLAT, PUSHY = 15, 60  # marketing_bias: under FLAT a key page barely persuades; PUSHY (HIGH) leans on levers too hard.
+KEY_PAGES = {"homepage", "services", "service", "product", "pricing", "contact", "about"}
 # Areas a code change can't fix: listed for the owner, not given a task.
 OFF_SITE = {"google_business": "Google Business Profile", "citation_gap": "Mentions on third-party sites",
             "llm_reputation": "AI assistants", "ai_search": "AI search", "meta_ads": "Ads"}
@@ -219,7 +222,104 @@ def accessibility(run):
                 ["Don't hide content from screen readers to silence a check."], rows or None)
 
 
-BUILDERS = (analytics, security, seo, structured_data, social, accessibility)
+def questions(run):
+    ac = run.tech("answer_coverage")
+    rows = [{"question": clean(q.get("question")), "coverage": clean(q.get("coverage")), "best_url": clean(q.get("best_url")),
+             "gap": clean(q.get("gap"))} for q in items(obj(ac).get("questions")) if q.get("coverage") in ("missing", "partial")]
+    return task("questions", "Answer the buyer questions the site doesn't", "answer_coverage", run.findings(["answer_coverage"]),
+                listed(rows, lambda r: f"{code(r['question'])}: {r['coverage']}" + (f", closest page {code(r['best_url'])}" if r["best_url"] else ""),
+                       "questions"),
+                ["For each question in `data/questions.json`: when `best_url` is set, answer it on that page next to the "
+                 "related content; otherwise add it to an FAQ section on the most relevant page (on the services or "
+                 "pricing page if nothing fits better).",
+                 "Answer from facts already on the site or in the profile. For `partial`, `gap` says what's missing.",
+                 "When the answer needs a fact the site doesn't state (a price, a timeline, a guarantee), write "
+                 "`TODO(owner): <the fact>` in place and add it to OWNER-TODO.md.",
+                 "Mark up FAQ sections with `FAQPage` JSON-LD whose text matches the visible answers."],
+                ["Every question in `data/questions.json` is answered on the site or has a TODO(owner) in place.",
+                 "Any `FAQPage` JSON-LD parses and matches the visible text."],
+                ["Don't invent prices, timelines, client names, numbers or guarantees.", "Don't copy another site's wording."],
+                rows or None)
+
+
+def slop(run):
+    jev = {clean(p.get("url")): obj(p.get("ai_slop")).get("level") for p in items(obj(run.tech("jev_copy")).get("pages"))}
+    rows = []
+    for p in run.pages:
+        s = obj(obj(p.get("copy_scores")).get("ai_slop"))
+        url, score = clean(p["url"]), s.get("score")
+        heavy = isinstance(score, (int, float)) and score >= SLOP_FLOOR
+        if heavy or jev.get(url) in ("MEDIUM", "HIGH"):
+            examples = [clean(e) for name in s.get("top_signals") or [] for e in (obj(obj(s.get("signals")).get(name)).get("examples") or [])[:1]]
+            rows.append({"url": url, "score": score, "jev": jev.get(url), "examples": examples})
+    return task("slop", "Rewrite generic, machine-sounding copy", "jev_copy",
+                run.findings(["copy", "jev_copy"], r"slop|generic|clich|stock|formula|voice|machine|jev"),
+                listed(rows, lambda r: f"{code(r['url'])}: AI slop {r['score']}/100" + "".join(f"; e.g. {code(e)}" for e in r["examples"][:2]), "slop"),
+                ["Rewrite the listed pages' body copy, one page at a time.",
+                 "Swap generic claims for specifics already on the site: who it's for, what happens, numbers, names, "
+                 "places.",
+                 "Cut stock openers, \"it's not X, it's Y\" frames and strings of three adjectives; vary sentence length.",
+                 "Keep the site's voice (first person if it uses it) and every fact, link and heading anchor."],
+                ["Every example quoted in `data/slop.json` is gone or rewritten.",
+                 "No fact, price, link or heading anchor was lost from a rewritten page."],
+                ["Don't add facts that aren't on the site.", "Don't rewrite pages that aren't listed."], rows or None)
+
+
+def persuasion(run):
+    rows = []
+    for p in run.pages:
+        b = obj(obj(p.get("copy_scores")).get("marketing_bias"))
+        score, signals, label = b.get("score"), obj(b.get("signals")), obj(p.get("classification")).get("label")
+        if not isinstance(score, (int, float)):
+            continue
+        missing = [words for name, words in (("loss_aversion", "the cost of doing nothing"), ("authority", "proof or credentials"))
+                   if not obj(signals.get(name)).get("subscore")]
+        if label in KEY_PAGES and (score < FLAT or missing):
+            rows.append({"url": clean(p["url"]), "page": clean(label), "kind": "flat", "score": score, "missing": missing, "examples": []})
+        elif score >= PUSHY:
+            examples = [clean(e) for name in ("unsupported_claims", "pressure", "fomo") for e in (obj(signals.get(name)).get("examples") or [])[:2]]
+            rows.append({"url": clean(p["url"]), "page": clean(label), "kind": "pushy", "score": score, "missing": [], "examples": examples})
+    line = lambda r: (f"{code(r['url'])} ({r['page']}): persuasion {r['score']}/100, missing {', '.join(r['missing']) or 'most levers'}"
+                      if r["kind"] == "flat" else
+                      f"{code(r['url'])}: persuasion {r['score']}/100, leaning on" + "".join(f" {code(e)}" for e in r["examples"][:2]))
+    return task("persuasion", "Make key pages persuade, truthfully", "copy",
+                run.findings(["copy"], r"persua|proof|claim|cta|call to action|lever|bias|pressure|outcome|trust"),
+                listed(rows, line, "persuasion"),
+                ["On each `flat` page, make sure the page carries, from facts on the site: (1) the outcome the reader "
+                 "gets, (2) proof (a result, client, credential or testimonial already on the site), (3) the cost of "
+                 "doing nothing, said plainly, and (4) one clear call to action. Put the outcome and the call to action "
+                 "on the first screen.",
+                 "Where there's no proof on the site, write `TODO(owner): a result or testimonial we can quote` and "
+                 "add it to OWNER-TODO.md.",
+                 "On each `pushy` page, back every quoted claim with its source or number, or cut it; drop urgency or "
+                 "scarcity with no stated basis.",
+                 "Talk to the reader (\"you\") more than about the business (\"we\")."],
+                ["Each `flat` page has an outcome, proof (or a TODO(owner)), the cost of doing nothing and one call to action.",
+                 "No claim quoted in `data/persuasion.json` remains without support."],
+                ["Don't invent testimonials, numbers, clients, awards, deadlines or scarcity.",
+                 "Don't add a second primary call to action to a page."], rows or None)
+
+
+def practitioners(run):
+    pr = run.tech("practitioners")
+    labels = (("dedicated_page", "own page"), ("person_schema", "Person schema"), ("same_as", "sameAs links"))
+    rows = []
+    for person in items(obj(pr).get("practitioners")):
+        missing = [label for key, label in labels if not obj(person.get("checks")).get(key)]
+        if missing:
+            rows.append({"name": clean(person.get("name")), "page": clean(person.get("profile_url")), "missing": missing})
+    return task("practitioners", "Give each practitioner a findable profile", "practitioners", run.findings(["practitioners"]),
+                listed(rows, lambda r: f"{code(r['name'])}: missing {', '.join(r['missing'])}", "practitioners"),
+                ["Give each listed person a page mainly about them (role, experience, focus), from facts already on the site.",
+                 "Add `Person` JSON-LD on it with `name`, `jobTitle`, `worksFor` and `sameAs` links to the profiles in "
+                 "the profile above or already linked on the site.",
+                 "Link the page from the about or team page."],
+                ["Each person in `data/practitioners.json` has a page with `Person` JSON-LD that parses, with `sameAs` "
+                 "links or a TODO(owner) for the missing profile URLs."],
+                ["Don't invent credentials, degrees or employers."], rows or None)
+
+
+BUILDERS = (analytics, security, seo, structured_data, social, accessibility, questions, slop, persuasion, practitioners)
 
 
 def recommendations(analysis):
