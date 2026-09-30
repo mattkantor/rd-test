@@ -7,11 +7,12 @@ from django.conf import settings
 from django.contrib.admin.views.decorators import staff_member_required
 from django.db.models import Count
 from django.forms import modelform_factory
-from django.http import FileResponse, Http404
+from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from ..dimensions import DIMENSIONS
+from ..report.fixpack import zipped
 from ..report.scorecard import render_scorecard
 from ..scan.crawler import normalize, origin
 from . import dashboard, tasks
@@ -212,6 +213,19 @@ def scorecard(request, name):
     except ValueError as exc:  # No report yet, or no Chrome.
         return back(str(exc))
     return FileResponse(pdf.open("rb"), content_type="application/pdf", filename=f"{run.site.host}-scorecard.pdf")
+
+
+@staff_member_required
+def fixpack(request, name):
+    """The run's fix pack as a zip, built from its newest analysis so it always matches the report."""
+    bundle = bundle_path(name)
+    if not bundle or not Run.objects.filter(name=name).exists():
+        raise Http404
+    try:
+        filename, data = zipped(bundle)
+    except ValueError as exc:  # No report yet.
+        return back(str(exc))
+    return HttpResponse(data, content_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @staff_member_required

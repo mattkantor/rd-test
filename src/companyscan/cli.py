@@ -79,6 +79,9 @@ def parser(json_errors=False):
     pdf = sub.add_parser("pdf", help="Render a bundle's analysis report.md as a designed PDF")
     pdf.add_argument("target", type=Path, help="Evidence bundle directory")
     pdf.add_argument("--json", action="store_true")
+    fix = sub.add_parser("fixpack", help="Write a bundle's fix pack: markdown tasks a coding agent can work through")
+    fix.add_argument("target", type=Path, help="Evidence bundle directory (needs a report)")
+    fix.add_argument("--json", action="store_true")
     return p
 
 
@@ -209,6 +212,11 @@ def main(argv=None):
             from .report.pdf import render_pdf
             result = {"status": "COMPLETE", "pdf": str(render_pdf(args.target).resolve())}
             print(json.dumps(result) if args.json else result["pdf"])
+            return 0
+        if args.command == "fixpack":
+            from .report.fixpack import write
+            result = {"status": "COMPLETE", "fixpack": str(write(args.target).resolve())}
+            print(json.dumps(result) if args.json else result["fixpack"])
             return 0
         if args.command == "reputation":
             result = reputation(args)

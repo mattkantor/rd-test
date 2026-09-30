@@ -16,5 +16,6 @@ urlpatterns = [
     path("run/<str:name>", views.run_dashboard, name="dashboard"),
     path("run/<str:name>/job", views.job_status),
     path("run/<str:name>/scorecard.pdf", views.scorecard, name="scorecard"),
+    path("run/<str:name>/fixpack.zip", views.fixpack, name="fixpack"),
     path("files/<path:path>", views.files),
 ]

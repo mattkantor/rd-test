@@ -157,6 +157,7 @@
       <p><a href="{{ m.report.md | file_url }}">report.md</a>
         {% if m.report.pdf %} · <a href="{{ m.report.pdf | file_url }}"><b>PDF</b></a>{% endif %}
         {% if m.report.analysis %} · <a href="/run/{{ bundle.name | urlencode }}/scorecard.pdf"><b>Customer scorecard</b></a>{% endif %}
+        {% if m.report.analysis %} · <a href="/run/{{ bundle.name | urlencode }}/fixpack.zip"><b>Fix pack (.zip)</b></a>{% endif %}
         {% if m.report.analysis %} · <a href="{{ m.report.analysis | file_url }}">analysis.json</a>{% endif %}</p>
     {% else %}
       <p class="muted">No report yet.</p>

@@ -146,3 +146,18 @@ class FixPackTest(unittest.TestCase):
             {"name": "Bo Chen", "profile_url": "https://acme.test/bo", "checks": {"dedicated_page": True, "person_schema": True, "same_as": True}}]})
         rows = json.loads(fixpack.build(d)["data/practitioners.json"])
         self.assertEqual(rows, [{"name": "Ann Lee", "page": "", "missing": ["own page", "Person schema", "sameAs links"]}])
+
+    def test_cli_writes_the_pack(self):
+        import contextlib
+        import io
+        from companyscan.cli import main
+        d, out = site(self.root), io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(main(["fixpack", str(d), "--json"]), 0)
+        result = json.loads(out.getvalue())
+        self.assertEqual((result["status"], Path(result["fixpack"]).name), ("COMPLETE", "fixpack"))
+        (d / "analysis/analysis.json").unlink()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            main(["fixpack", str(d), "--json"])
+        self.assertEqual(json.loads(out.getvalue())["status"], "ERROR")

@@ -1,8 +1,10 @@
 """Django UI tests. They run under `python manage.py test` (needs the web extra); plain unittest skips them."""
+import io
 import json
 import shutil
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -151,6 +153,24 @@ class WebTests(WebCase):
         self.assertEqual(seen[1][0], "p1")
         self.assertEqual(seen[1][1]["k1"]["identity"], {"category": "dentist"})
         self.assertEqual((site.place_id, site.site_read["reused_from"]), ("p1", self.job().run))
+
+    def test_fix_pack_downloads_as_a_zip_once_there_is_a_report(self):
+        d = bundle(self.root, "acme", "https://acme.test/", "2026-01-01T00:00:00+00:00")
+        self.client.get("/")
+        self.assertNotContains(self.client.get("/run/acme"), "Fix pack")
+        self.assertIn("generate+the+report+first", self.client.get("/run/acme/fixpack.zip")["location"])
+        (d / "analysis/analysis.json").write_text(json.dumps(
+            {"findings": [{"id": "S1", "title": "Missing headers", "severity": "WARNING"}], "security": {"findings": ["S1"]}}))
+        (d / "analysis/report.md").write_text("# Acme\n")
+        self.assertContains(self.client.get("/run/acme"), "/run/acme/fixpack.zip")
+        response = self.client.get("/run/acme/fixpack.zip")
+        self.assertEqual(response["content-type"], "application/zip")
+        self.assertIn('filename="fixpack-acme.test-20260101.zip"', response["content-disposition"])
+        names = zipfile.ZipFile(io.BytesIO(response.content)).namelist()
+        self.assertIn("fixpack-acme.test-20260101/tasks/01-security-headers.md", names)
+        self.assertEqual(self.client.get("/run/nope/fixpack.zip").status_code, 404)
+        self.client.logout()
+        self.assertEqual(self.client.get("/run/acme/fixpack.zip").status_code, 302)  # Staff only.
 
     def test_scorecard_uses_the_sites_goal(self):
         d = bundle(self.root, "acme", "https://acme.test/", "2026-01-01T00:00:00+00:00")

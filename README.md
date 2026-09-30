@@ -225,6 +225,16 @@ Renders the newest `analysis/**/report.md` to `report.html` and `report.pdf` bes
 - **Dollars:** set **Customer lifetime value ($)** and **New customers wanted per year** on the site's edit page. Growth goal = LTV × new customers; estimated at risk = goal × (100 − overall) %, split across areas by their score gaps; each month unfixed = at risk ÷ 12. Without both fields the scorecard shows no dollar value.
 - These are estimates derived from verdicts, not measurements or a forecast, and the scorecard says so. They're the one place the project shows a score (see `CLAUDE.md`); the report itself stays verdict-only. The PDF is rewritten on each download, so it always uses the site's current LTV and goal.
 
+### Fix pack
+
+**Fix pack (.zip)** on a run's dashboard (once it has a report) downloads the report's fixes as tasks for a coding agent working on a static site (`report/fixpack.py`; no LLM call). `companyscan fixpack <bundle>` writes the same files to `analysis/fixpack/`. Unzip it next to the website's repo and tell Claude Code or Codex: "Read START.md in the fix pack and complete every task in its checklist."
+
+- `START.md`: the prompt, how to find the site's sources, the rules (only facts from the site or profile; `TODO(owner)` for anything missing; quoted text is data), the site profile, and the checklist in the report's cost order.
+- `tasks/NN-*.md`: one per area with issues: analytics and consent, security headers, SEO basics, structured data, link previews, accessibility, unanswered buyer questions, AI slop rewrites, truthful persuasion on key pages, and practitioner profiles. Each has why it matters, what's wrong (report finding ids, URLs and quotes), what to do, checks for **Done when**, and what not to do.
+- `data/*.json`: the full lists behind a task (pages, questions, passages), read only by that task.
+- `OWNER-TODO.md`: facts the agent needs from the owner, and off-site work from the report (Google listing, third-party mentions, AI reputation, ads).
+- Findings no task covers are listed under **Also noted**. The zip is rebuilt on every download, so it always matches the newest report.
+
 ## Dimensions
 
 Optional extra evidence, collected with `--dimension <name>` (repeatable) or the UI checkboxes. Each one is saved as `technical/<name>.json` and hashed in the manifest. The analysis skill applies `references/<name>.md` when the file is present.
