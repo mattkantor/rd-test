@@ -2,6 +2,7 @@
 import argparse
 import csv
 import json
+import logging
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,6 +18,9 @@ from .scan.technical import reports
 from .scan.accessibility import summarize as accessibility_summary
 from .scan.copy_scores import score_pages as copy_scores
 from .dimensions import DIMENSIONS
+from . import logs
+
+log = logging.getLogger(__name__)
 
 
 def positive(value):
@@ -207,6 +211,8 @@ def batch(args):
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     args = parser("--json" in argv).parse_args(argv)
+    logs.setup("cli")
+    log.info("companyscan %s", " ".join(argv))
     try:
         if args.command == "pdf":
             from .report.pdf import render_pdf
@@ -226,11 +232,13 @@ def main(argv=None):
                 raise ValueError("Batch index already exists; use a new --output directory")
             result = batch(args) if args.command == "batch" else run(args)
     except (ValueError, OSError) as exc:
+        log.exception("companyscan %s failed", args.command)
         if args.json:
             print(json.dumps({"status": "ERROR", "error": str(exc)}))
         else:
             print(f"companyscan: {exc}", file=sys.stderr)
         return 2
+    log.info("companyscan %s finished: %s", args.command, result.get("status"))
     if args.json:
         print(json.dumps(result, ensure_ascii=False))
     else:

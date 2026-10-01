@@ -1,9 +1,12 @@
 """Django settings. Local: SQLite, DEBUG on. Server: set DATABASE_URL (Postgres), which turns DEBUG off by default."""
 import os
+import sys
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 from jinja2 import ChainableUndefined
+
+from .. import logs
 
 BASE_DIR = Path.cwd()
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
@@ -81,5 +84,9 @@ LOGIN_URL = "admin:login"
 STATIC_URL = "static/"
 STATICFILES_DIRS = [VIEWS / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
+# companyscan.logs configures logging instead of Django: logs/web.log or logs/worker.log locally (warnings also on the
+# terminal), stderr on a server. Django's own loggers (request errors with tracebacks) propagate into it.
+LOGGING_CONFIG = None
+logs.setup("worker" if "run_huey" in sys.argv else "web", console=True)
 USE_TZ = True
 TIME_ZONE = os.environ.get("TZ", "UTC")

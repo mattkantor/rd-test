@@ -17,6 +17,8 @@ if __name__ == "__main__":
     sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))  # Works without pip install -e.
     if sys.argv[1:2] != ["test"]:  # Tests stub every provider and must never see real keys.
         load_env(Path(__file__).resolve().parent / ".env")
+    else:
+        os.environ.setdefault("COMPANYSCAN_LOG_DIR", "off")  # Tests don't write logs/.
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "companyscan.server.settings")
     from django.core.management import execute_from_command_line
     execute_from_command_line(sys.argv)

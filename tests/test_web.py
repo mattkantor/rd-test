@@ -232,8 +232,10 @@ class WebTests(WebCase):
         self.assertEqual(self.job().state, "done")
 
     def test_job_errors_are_shown_not_lost(self):
-        with patch.object(tasks, "run", side_effect=ValueError("disk full")):
+        with patch.object(tasks, "run", side_effect=ValueError("disk full")), \
+                self.assertLogs("companyscan.web.tasks", "ERROR") as logged:
             self.client.post("/crawl", {"url": "https://acme.test"})
+        self.assertIn("Traceback", logged.output[0])  # The full trace reaches the log, not just the message.
         self.assertEqual((self.job().state, self.job().label), ("error", "disk full"))
 
     def test_recrawl_runs_every_check_on_the_bundle_url(self):

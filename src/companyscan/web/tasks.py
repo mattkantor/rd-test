@@ -1,4 +1,6 @@
 """Crawl, report and re-crawl jobs, run by the Huey worker (`python manage.py run_huey`)."""
+import logging
+import time
 from datetime import datetime, timezone
 
 from django.conf import settings
@@ -12,6 +14,8 @@ from ..report.pdf import render_pdf
 from ..scan.crawler import origin
 from .models import Job, Site, remember, sync
 
+log = logging.getLogger(__name__)
+
 
 def new_run(url):
     return f"{directory_name(url)}-{datetime.now(timezone.utc):%Y%m%d-%H%M%S}"
@@ -24,7 +28,9 @@ def start(url, kind, label, run, dimensions=()):
         with transaction.atomic():
             job = Job.objects.create(site=site, kind=kind, url=url, dimensions=list(dimensions), run=run, label=label)
     except IntegrityError:  # one_running_job_per_site.
+        log.info("%s for %s not queued: a job is already running", kind, url)
         return None
+    log.info("queued %s job %s for %s (run %s)", kind, job.pk, url, run)
     execute(job.pk)
     return job
 
@@ -60,6 +66,7 @@ def recrawl(job, progress):
     try:
         report(job, progress, crawl_steps[0] + 1, crawl_steps[0] + 2)
     except Exception as exc:  # The new run is on disk either way; say which half failed.
+        log.exception("re-crawl of %s: crawl kept, report failed", job.run)
         raise ValueError(f"{crawled}, but the report failed: {exc}") from exc
     return f"{crawled} · report ready"
 
@@ -75,9 +82,13 @@ def execute(job_id):
         count = f": {done} of {total} {unit}".rstrip() if total else ""
         Job.objects.filter(pk=job_id).update(step=step, steps=steps, label=label + count, done=done, total=total, unit=unit)
 
+    log.info("%s job %s started for %s (run %s)", job.kind, job_id, job.url or job.site, job.run)
+    began = time.monotonic()
     try:
         state, label = "done", WORK[job.kind](job, progress)
     except Exception as exc:  # Job boundary: surface every failure in the UI instead of losing it.
+        log.exception("%s job %s for %s failed", job.kind, job_id, job.url or job.site)
         state, label = "error", str(exc)
+    log.info("%s job %s %s in %.1fs: %s", job.kind, job_id, state, time.monotonic() - began, label)
     Job.objects.filter(pk=job_id).update(state=state, label=label, finished=dj_timezone.now())
     sync()
