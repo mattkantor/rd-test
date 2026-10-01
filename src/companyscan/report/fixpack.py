@@ -4,6 +4,7 @@ ever appears quoted (in backticks or data files), never as an instruction."""
 import hashlib
 import io
 import json
+import logging
 import re
 import shutil
 import zipfile
@@ -13,6 +14,8 @@ from urllib.parse import urlparse
 from .analyze import latest
 from .pdf import items, load
 from .scorecard import WHY, WHY_DEFAULT
+
+log = logging.getLogger(__name__)
 
 QUOTE_MAX, LIST_MAX = 300, 10  # Characters per quote; bullets shown in a task before pointing to its data file.
 TITLE_MAX, DESCRIPTION_MIN, DESCRIPTION_MAX = 60, 50, 160  # ponytail: common search-snippet lengths.
@@ -456,6 +459,7 @@ def build(bundle):
     used = {str(f.get("id")) for t in tasks for f in t["findings"]} | {str(f.get("id")) for f in run.findings(list(OFF_SITE))}
     also = [f for f in run.findings([*analysis, "website"]) if str(f.get("id")) not in used]
     host = urlparse(str(manifest.get("input_url") or "")).hostname or bundle.name
+    log.info("fix pack for %s: %d tasks (%s)", bundle.name, len(tasks), ", ".join(t["slug"] for t in tasks) or "none")
     files = {"START.md": start(host, manifest, sha, tasks, also), "OWNER-TODO.md": owner(run, recs)}
     for n, t in enumerate(tasks, 1):
         files[f"tasks/{n:02d}-{t['slug']}.md"] = render(n, t, recs)

@@ -1,6 +1,8 @@
 """LLM-written analysis: verify the bundle, digest it, and run the footprint-analyze skill as one OpenAI call via LangChain."""
 import hashlib
 import json
+import logging
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -8,6 +10,8 @@ from ..dimensions import DIMENSIONS
 from ..llm import REPORT_MODEL, chat_model
 from ..scan.copy_scores import chrome
 from ..scan.measurement import shows_ads
+
+log = logging.getLogger(__name__)
 
 # Shipped inside the package so installed copies work.
 SKILL = Path(__file__).resolve().parents[1] / "skills/footprint-analyze/SKILL.md"
@@ -110,19 +114,25 @@ def analyze(bundle, timeout=1800):
     problems = verify(bundle)
     integrity = "All manifest artifacts passed size/SHA-256 verification by companyscan." if not problems else \
         "companyscan integrity check FAILED; report this and do not present the corpus as complete: " + "; ".join(problems)
+    if problems:
+        log.warning("integrity check failed for %s: %s", bundle.name, "; ".join(problems))
+    began = time.monotonic()
     system = f"{ADAPTER}\n\n# SKILL.md\n{SKILL.read_text(encoding='utf-8')}\n\n{rubrics(bundle)}"
     user = f"Integrity: {integrity}\n\nEvidence bundle digest for {bundle.name}:\n\n{digest(bundle)}"
     llm = chat_model(REPORT_MODEL, timeout=timeout).with_structured_output(
         {"title": "FootprintAnalysis", "type": "object", "properties": {"report_md": {"type": "string"}, "analysis": {"type": "object"}}},
         method="json_mode")
+    log.info("report for %s: asking %s (%d characters)", bundle.name, REPORT_MODEL, len(system) + len(user))
     try:
         data = llm.invoke([("system", system), ("user", user)])
     except ValueError:
         raise
     except Exception as exc:  # Provider/auth/network errors surface as the job's error message.
+        log.exception("report for %s: LLM request failed", bundle.name)
         raise ValueError(f"LLM request failed: {exc}") from exc
     report_md, analysis = (data or {}).get("report_md"), (data or {}).get("analysis")
     if not isinstance(report_md, str) or not report_md.strip() or not isinstance(analysis, dict):
+        log.error("report for %s: the model returned no report_md or analysis (keys: %s)", bundle.name, list(data or {}))
         raise ValueError("analysis did not return report_md and an analysis object")
     manifest = (bundle / "manifest.json").read_bytes()
     stamp = datetime.now(timezone.utc)
@@ -134,4 +144,5 @@ def analyze(bundle, timeout=1800):
     out.mkdir(parents=True, exist_ok=True)
     (out / "analysis.json").write_text(json.dumps(analysis, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     (out / "report.md").write_text(report_md, encoding="utf-8")
+    log.info("report for %s written to %s in %.1fs", bundle.name, out, time.monotonic() - began)
     return out / "report.md"

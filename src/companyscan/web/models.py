@@ -1,5 +1,6 @@
 """Sites, crawl runs and jobs. Bundles on disk stay the evidence; Run is an index of them, rebuilt by sync()."""
 import json
+import logging
 from datetime import datetime
 from urllib.parse import urlsplit
 
@@ -12,6 +13,8 @@ from ..dimensions.reputation import QUESTIONS
 from ..report.analyze import latest
 from ..scan.crawler import normalize, origin
 from .dashboard import SNAPSHOT, load, snapshot
+
+log = logging.getLogger(__name__)
 
 
 def lines(text):
@@ -206,6 +209,7 @@ def sync(root=None):
             data = json.loads(manifest.read_text(encoding="utf-8"))
             site = origin(normalize(data["input_url"]))
         except (OSError, ValueError, KeyError, TypeError):
+            log.warning("sync: skipped unreadable manifest %s", manifest, exc_info=True)
             continue
         if "counts" not in data:  # Not a crawl bundle (e.g. a standalone reputation check).
             continue
@@ -223,9 +227,13 @@ def sync(root=None):
             Snapshot.objects.get_or_create(name=manifest.parent.name, defaults={
                 "site": Site.objects.get(origin=site), "created_at": parse_time(data.get("created_at")),
                 "checks": {name: data for name, data in checks.items() if data}, "metrics": load(manifest.parent)["metrics"]})
+            log.info("sync: new run %s", manifest.parent.name)
         elif manifest.parent.name in unmeasured:
             Snapshot.objects.filter(name=manifest.parent.name).update(metrics=load(manifest.parent)["metrics"])
-    Run.objects.exclude(name__in=seen).delete()
+            log.info("sync: backfilled metrics for %s", manifest.parent.name)
+    gone, _ = Run.objects.exclude(name__in=seen).delete()
+    if gone:
+        log.info("sync: dropped %d runs whose bundles are gone", gone)
 
 
 class Job(models.Model):

@@ -1,5 +1,6 @@
 """Bounded HTTP transport, URL normalization, and robots-aware crawl."""
 import ipaddress
+import logging
 import re
 import socket
 import time
@@ -10,6 +11,8 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from urllib.robotparser import RobotFileParser
 
 from ..models import Config, Response, USER_AGENT
+
+log = logging.getLogger(__name__)
 
 EXCLUDED = re.compile(r"(?:^|/)(?:login|log-in|signin|sign-in|logout|cart|checkout|account|wp-admin|wp-login\.php)(?:/|$)", re.I)
 BINARY = re.compile(r"\.(?:pdf|zip|png|jpe?g|gif|webp|svg|mp[34]|avi|css|js|ico|woff2?|ttf|gz|xml)$", re.I)
@@ -118,6 +121,8 @@ class Client:
                     result.error = f"HTTP {result.status}"
         except (OSError, URLError, ValueError) as exc:
             result.error = str(exc)
+            log.warning("GET %s failed: %s", url, exc)
+        log.debug("GET %s -> %s%s", url, result.status, f" ({result.error})" if result.error else "")
         self.cache[cache_key] = result
         return result
 

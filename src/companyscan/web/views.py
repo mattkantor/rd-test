@@ -1,5 +1,6 @@
 """Staff-only pages: the site list, the per-run dashboard, bundle files, and the forms that start jobs."""
 import json
+import logging
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -17,6 +18,8 @@ from ..report.scorecard import render_scorecard
 from ..scan.crawler import normalize, origin
 from . import dashboard, tasks
 from .models import QUESTIONS, Job, QuestionSet, Run, Site, sync
+
+log = logging.getLogger(__name__)
 
 BUSY = "That site already has a job running."
 
@@ -211,6 +214,7 @@ def scorecard(request, name):
     try:
         pdf = render_scorecard(bundle, run.site.customer_ltv, run.site.target_customers)
     except ValueError as exc:  # No report yet, or no Chrome.
+        log.warning("scorecard for %s: %s", name, exc, exc_info=True)
         return back(str(exc))
     return FileResponse(pdf.open("rb"), content_type="application/pdf", filename=f"{run.site.host}-scorecard.pdf")
 
@@ -224,6 +228,7 @@ def fixpack(request, name):
     try:
         filename, data = zipped(bundle)
     except ValueError as exc:  # No report yet.
+        log.warning("fix pack for %s: %s", name, exc)
         return back(str(exc))
     return HttpResponse(data, content_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 

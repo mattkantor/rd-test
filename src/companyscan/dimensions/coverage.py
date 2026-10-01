@@ -3,12 +3,15 @@
 One model reads the site, writes service-specific questions (cost, availability, fit, comparisons, process), picks
 candidate pages from an index of the crawl, then judges each question against those pages' text. Every verdict is
 INFERRED; quotes are checked against the captured text."""
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlsplit
 
 from ..llm import REPUTATION_MODEL, chat_model
 from ..scan.copy_scores import chrome
 from .reputation import WORKERS, previous, read_site, squash, structured
+
+log = logging.getLogger(__name__)
 
 QUESTIONS = 12
 INDEX_CHARS, PAGE_CHARS, CANDIDATES = 300, 6000, 3  # ponytail: ~15K-char index, ~18K per judge call; raise if big pages judge thin.
@@ -88,6 +91,7 @@ def judge(llm, question, candidates, bodies):
     try:
         verdict = llm.with_structured_output(JUDGE_SCHEMA).invoke(JUDGE.format(question=question["question"], pages=text)) or {}
     except Exception as exc:  # One failed judgment is recorded; the rest still count.
+        log.warning("answer coverage judgment failed for %r", question.get("question"), exc_info=True)
         row.update(coverage=None, error=str(exc))
         return row
     row.update(coverage=verdict.get("coverage") if verdict.get("coverage") in ("answered", "partial", "missing") else None,
@@ -139,5 +143,6 @@ def collect(client, discovery, pages, brand):
                                 progress=getattr(client, "progress", None), questions=questions,
                                 memo=getattr(client, "site_reads", None))
     except Exception as exc:  # Missing key, auth, network and provider errors share no base class.
+        log.exception("answer_coverage: LLM request failed")
         return {"status": "UNKNOWN", "reason": "llm_request_failed", "error": str(exc), "limitations": LIMITATIONS}
     return {**result, "model": REPUTATION_MODEL, "questions_from": run if questions else None, "limitations": LIMITATIONS}

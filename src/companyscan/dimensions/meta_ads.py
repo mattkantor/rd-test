@@ -1,5 +1,6 @@
 """Meta Ad Library API keyword search for the brand. The access token never enters the bundle."""
 import json
+import logging
 import os
 from collections import Counter
 from urllib.error import HTTPError, URLError
@@ -8,6 +9,8 @@ from urllib.request import urlopen
 
 from ..models import now
 from ..scan.measurement import shows_ads
+
+log = logging.getLogger(__name__)
 
 
 def collect(client, discovery, pages, brand):
@@ -29,8 +32,10 @@ def collect(client, discovery, pages, brand):
         with urlopen("https://graph.facebook.com/ads_archive?" + query, timeout=client.config.timeout) as r:
             data = json.load(r)
     except HTTPError as exc:
+        log.warning("Meta Ad Library API returned HTTP %s", exc.code, exc_info=True)
         return {**base, "status": "UNKNOWN", "reason": "api_error", "error": exc.read(2000).decode("utf-8", "replace")}
     except (URLError, OSError, ValueError) as exc:
+        log.warning("Meta Ad Library request failed", exc_info=True)
         return {**base, "status": "UNKNOWN", "reason": "request_failed", "error": str(exc)}
     ads = data.get("data", [])
     return {**base, "status": "OBSERVED", "ad_count": len(ads), "more_available": bool(data.get("paging", {}).get("next")),

@@ -1,6 +1,7 @@
 """Practitioner profiles: does each professional a buyer would choose (dentist, lawyer, advisor) have a substantial,
 connected profile? One LLM read of the people pages lists them and what their profiles state, with quotes checked against
 the page text; Person JSON-LD is matched to them in plain Python."""
+import logging
 import re
 from urllib.parse import urlsplit
 
@@ -8,6 +9,8 @@ from ..llm import REPUTATION_MODEL, chat_model
 from ..scan.copy_scores import chrome
 from ..scan.schema import objects
 from .reputation import squash
+
+log = logging.getLogger(__name__)
 
 READ_PAGES, READ_CHARS = 8, 5000  # ponytail: ~40K characters in one call; a big firm's roster will read thin.
 # Wider than the page classifier's "person" rule, which misses /our-team/ and /our-doctors/.
@@ -146,5 +149,6 @@ def collect(client, discovery, pages, brand):
         llm = chat_model(REPUTATION_MODEL, timeout=120)
         result = check_practitioners(llm, urlsplit(discovery["origin"]).netloc.removeprefix("www."), pages)
     except Exception as exc:  # Missing key, auth, network and provider errors share no base class.
+        log.exception("practitioners: LLM request failed")
         return {"status": "UNKNOWN", "reason": "llm_request_failed", "error": str(exc), "limitations": LIMITATIONS}
     return {**result, "model": REPUTATION_MODEL, "limitations": LIMITATIONS}

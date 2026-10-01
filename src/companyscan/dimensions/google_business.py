@@ -5,6 +5,7 @@ is this domain or its phone is one of the site's; otherwise nothing is picked, s
 listing. With a place id (--place-id, stored by the web app from the first match) that listing is fetched directly, so
 runs follow the same listing. The API key goes in a header and never enters the bundle."""
 import json
+import logging
 import os
 import re
 from urllib.error import HTTPError, URLError
@@ -13,6 +14,8 @@ from urllib.request import Request, urlopen
 
 from ..models import now
 from . import identity
+
+log = logging.getLogger(__name__)
 
 URL = "https://places.googleapis.com/v1/places:searchText"
 DETAILS = "https://places.googleapis.com/v1/places/"
@@ -141,8 +144,10 @@ def collect(client, discovery, pages, brand):
     try:
         places, base["lookup"] = lookup(getattr(config, "place_id", None), query, key, getattr(config, "timeout", 15))
     except HTTPError as exc:
+        log.warning("Google Places API returned HTTP %s", exc.code, exc_info=True)
         return {**base, "status": "UNKNOWN", "reason": "api_error", "error": exc.read(2000).decode("utf-8", "replace")}
     except (URLError, OSError, ValueError) as exc:
+        log.warning("Google Places request failed", exc_info=True)
         return {**base, "status": "UNKNOWN", "reason": "request_failed", "error": str(exc)}
     candidates = [{"name": (p.get("displayName") or {}).get("text"), "address": p.get("formattedAddress"),
                    "website": p.get("websiteUri"), "maps": p.get("googleMapsUri"), "matched_by": match(p, domain, profile["phones"])}

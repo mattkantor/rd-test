@@ -1,8 +1,11 @@
 """First-party discovery with bounded sitemap-index traversal."""
+import logging
 import xml.etree.ElementTree as ET
 from collections import deque
 
 from .crawler import Robots, normalize, origin
+
+log = logging.getLogger(__name__)
 
 
 def discover(client, url):
@@ -60,6 +63,7 @@ def discover(client, url):
                         urls.append(candidate)
             except (ET.ParseError, ValueError) as exc:
                 record["parse_error"] = str(exc)
+                log.warning("sitemap %s didn't parse: %s", record.get("url"), exc)
         records.append(record)
     return {"input_url": start, "origin": scope, "robots": robots.record(),
             "sitemap": {"documents": records, "skipped": skipped, "limit_reached": bool(queue)},

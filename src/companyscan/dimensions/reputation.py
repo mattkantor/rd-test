@@ -3,6 +3,7 @@
 check_reputation works with any LangChain chat model; the `reputation` command and the dimension both use one."""
 import hashlib
 import json
+import logging
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -14,6 +15,8 @@ from ..scan.artifacts import write_json
 from ..scan.crawler import normalize
 from . import identity
 from .ranking import cited, score
+
+log = logging.getLogger(__name__)
 
 PROMPT = ("What do you know about the company at {domain}{name}{location}? Who is its ideal customer profile and where "
           "does it operate? How does it compare to others serving that customer in that location, and who are its main "
@@ -123,6 +126,7 @@ def check_reputation(domain, llm, company_name=None, location=None, profile=None
     try:
         record["analysis"] = llm.with_structured_output(ANALYSIS_SCHEMA).invoke(ANALYZE.format(domain=host, answer=record["raw_answer"]))
     except Exception as exc:  # Keep the raw answer; the analysis can be rerun from it.
+        log.warning("analysis of the branded answer about %s failed", host, exc_info=True)
         record.update(status="PARTIAL", error=f"analysis failed: {exc}")
     if isinstance(record["analysis"], dict):
         stated = {fact: record["analysis"].get(f"stated_{fact}") for fact in ("website", "city", "phone", "category")}
@@ -194,6 +198,7 @@ def read_site(llm, domain, pages, icp=None, memo=None):
     try:
         found = llm.with_structured_output(SITE_SCHEMA).invoke(prompt)
     except Exception as exc:  # The rest of the check still runs on the JSON-LD profile.
+        log.warning("site read failed", exc_info=True)
         record["error"] = f"site read failed: {exc}"
         return record
     if not isinstance(found, dict):
@@ -255,6 +260,7 @@ def ask(llm, prompt, number, answerer=None):
         row["raw_answer"], row["sources"] = text(message), citations(message)
         row["companies"] = structured(llm, MENTIONS_SCHEMA, EXTRACT.format(answer=row["raw_answer"]), "companies")
     except Exception as exc:  # One failed sample is recorded and excluded; the rest still score.
+        log.warning("buyer-question answer failed: %r", row.get("prompt"), exc_info=True)
         row["error"] = str(exc)
     return row
 
@@ -305,6 +311,7 @@ def rank_reputation(domain, llm, company_name=None, prompts=None, samples=3, num
             prompts = generate_prompts(llm, host, audience["icp"]["value"], audience["location"]["value"],
                                        num_prompts, company_name, fingerprint.get("category") or found.get("category"))
         except Exception as exc:  # Keep the branded result; the rank is just unavailable.
+            log.warning("buyer-question generation for %s failed", host, exc_info=True)
             prompts, error = [], f"prompt generation failed: {exc}"
         if not prompts and not error:
             error = "prompt generation returned no usable buyer questions (all were blank or named the company)"
@@ -365,6 +372,7 @@ def collect(client, discovery, pages, brand, search=False):
                                  answerer=answerer, prompts=prompts, source="previous" if prompts else None,
                                  fingerprint=fingerprint, memo=getattr(client, "site_reads", None))
     except Exception as exc:  # Missing key, auth, network and provider errors share no base class.
+        log.exception("%s: LLM request failed", "ai_search" if search else "llm_reputation")
         return {"status": "UNKNOWN", "reason": "llm_request_failed", "error": str(exc), "limitations": limitations}
     models = {"model": SEARCH_MODEL, "extraction_model": REPUTATION_MODEL} if search else {"model": REPUTATION_MODEL}
     return {**result, **models, "questions_from": run if prompts else None, "limitations": limitations}

@@ -1,6 +1,7 @@
 """Per-page AI slop judged by TypeSafe's Jev (a scoring model, not a text generator). A second, holistic opinion
 beside the regex copy scores: INFERRED, never proof of AI authorship. The API key never enters the bundle."""
 import json
+import logging
 import os
 import ssl
 import statistics
@@ -10,6 +11,8 @@ from urllib.request import Request, urlopen
 
 from ..models import now
 from ..scan.copy_scores import chrome, level
+
+log = logging.getLogger(__name__)
 
 ENDPOINT = "https://api.typesafe.ai/v1/systemone"
 MODEL = os.environ.get("JEV_MODEL", "jev-latest")
@@ -51,8 +54,10 @@ def judge(key, page, text, timeout, context):
         slop, answers = data["answers"]["ai_slop"], data["answers"]
         score = round(float(slop["score"]) / (len(LEVELS) - 1) * 100)
     except HTTPError as exc:
+        log.warning("Jev API returned HTTP %s", exc.code, exc_info=True)
         return {**out, "error": f"HTTP {exc.code}: {exc.read(500).decode('utf-8', 'replace')}"}
     except (URLError, OSError, ValueError, KeyError, TypeError) as exc:
+        log.warning("Jev request failed", exc_info=True)
         return {**out, "error": str(exc)}
     return {**out, "model": data.get("model"), "input_tokens": (data.get("usage") or {}).get("input_tokens"),
             "ai_slop": {"score": score, "level": level(score), "confidence": slop.get("confidence"),

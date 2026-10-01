@@ -68,8 +68,12 @@ Only the checks you use need a key; a missing key makes that check `UNKNOWN` rat
 | `HUEY_DB` | the job queue file; web and worker must share it (one host) | `./huey.sqlite3` |
 | `HUEY_IMMEDIATE` | `1` runs jobs inline in the web process (no worker; debugging only) | unset |
 | `TZ` | time zone for the UI | `UTC` |
+| `COMPANYSCAN_LOG_LEVEL` | log detail: `DEBUG` adds every fetch | `INFO` |
+| `COMPANYSCAN_LOG_DIR` | where logs go, or `off` | `./logs` (stderr when `DATABASE_URL` is set) |
 
 API keys are never written to bundles.
+
+**Logs.** Each process appends to its own rotating file in `logs/` (git-ignored): `cli.log`, `web.log` (runserver) and `worker.log` (run_huey), 10 MB × 5. Lines read `time LEVEL [pid thread] module:line message`; every failure is logged with its full traceback, including the ones a check records as `UNKNOWN` and keeps going, and any uncaught exception in any thread. Steps and timings (discovery, crawl, each dimension, the report, PDF, jobs, `sync()`) are at `INFO`. Prompts, answers and API keys are never logged; page URLs are. `grep -n -A30 'ERROR\|CRITICAL' logs/*.log` shows every failure with its trace. On a server everything goes to stderr instead, and tests write no logs.
 
 ## Running
 

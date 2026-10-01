@@ -4,6 +4,7 @@ import csv
 import json
 import logging
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -124,13 +125,17 @@ def run(args, target=None, output=None, progress=None):
         client.progress = report
         report()
 
+    log.info("scan %s -> %s (dimensions: %s)", target, output, ", ".join(dimensions) or "none")
+    began = time.monotonic()
     stage(0)
     discovery, robots = discover(client, target)
+    log.info("discovered %d sitemap URLs", len(discovery["sitemap_urls"]))
     # Discovery needs one HTML page to expose canonical links, feeds and profiles.
     if args.command == "discover":
         config.max_pages = 1
     stage(1)
     pages, skipped = crawl(client, target, robots, discovery["sitemap_urls"])
+    log.info("crawled %d pages, skipped %d URLs", len(pages), len(skipped))
     discovery["html_signals"] = [{"url": p["url"], "canonical_url": p.get("canonical_url"), "feeds": p.get("feeds", []),
                                    "schema_types": p.get("json_ld", {}).get("types", [])} for p in pages]
     stage(2)
@@ -146,9 +151,15 @@ def run(args, target=None, output=None, progress=None):
     client.technical = technical  # Lets a dimension read ones collected before it.
     for i, name in enumerate(dimensions, 3):
         stage(i)
+        started = time.monotonic()
         technical[name] = DIMENSIONS[name]["collect"](client, discovery, pages, brand)
+        status = technical[name].get("status") if isinstance(technical[name], dict) else None
+        log.info("dimension %s: %s in %.1fs", name, status or "done", time.monotonic() - started)
+        if status == "UNKNOWN":
+            log.warning("dimension %s came back UNKNOWN: %s", name, technical[name].get("error") or technical[name].get("reason"))
     stage(len(steps) - 1)
     result = write_bundle(output, args.command, config, discovery, pages, skipped, technical, profiles, args.company_name)
+    log.info("bundle %s written: %s in %.1fs", output, result.get("status"), time.monotonic() - began)
     result["accessibility"] = {key: technical["accessibility"][key] for key in ("automated_status", "conformance_status", "pages_checked", "finding_count", "manual_review_required")}
     result["accessibility"]["report"] = str((output / "technical/accessibility.md").resolve())
     if args.command == "discover":
@@ -178,6 +189,7 @@ def reputation(args):
         result = rank_reputation(args.target, chat_model(args.model), args.company_name,
                                  prompts or None, args.samples, args.num_prompts, icp=args.icp, location=args.location)
     except Exception as exc:  # Provider/auth/network errors surface as the standard error shape.
+        log.exception("reputation: LLM request failed")
         raise ValueError(f"LLM request failed: {exc}") from exc
     return write_bundle(output, result, args.model)
 

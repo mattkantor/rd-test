@@ -2,6 +2,7 @@
 views/report/report.css, printed by headless Chrome. Without analysis.json it prints report.md alone."""
 import html as htmllib
 import json
+import logging
 import os
 import re
 import shutil
@@ -12,6 +13,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from .analyze import hidden, latest
+
+log = logging.getLogger(__name__)
 
 CSS = Path(__file__).resolve().parents[1] / "views" / "report" / "report.css"
 CHROMES = [os.environ.get("CHROME", ""), "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
@@ -53,10 +56,13 @@ def render_pdf(bundle):
         page = designed(page, analysis, load(bundle / "manifest.json") or {}, title) if analysis else badges(page)
         html.write_text(page, encoding="utf-8")
     except subprocess.CalledProcessError as exc:
+        log.error("pandoc failed for %s: %s", md, exc.stderr.decode("utf-8", "replace")[-2000:])
         raise ValueError(f"pandoc failed: {exc.stderr.decode('utf-8', 'replace')[-500:]}") from None
     except subprocess.TimeoutExpired:
+        log.error("pandoc timed out for %s", md)
         raise ValueError("pandoc timed out") from None
     print_pdf(chrome, html, pdf)
+    log.info("PDF written: %s", pdf)
     return pdf
 
 
