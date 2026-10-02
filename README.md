@@ -59,7 +59,7 @@ Only the checks you use need a key; a missing key makes that check `UNKNOWN` rat
 | `COMPANYSCAN_SEARCH_MODEL` | `ai_search` answers (an OpenAI model with `web_search`) | `openai:gpt-5-mini` |
 | `COMPANYSCAN_OUTPUT` | where the web UI and worker read and write bundles (both must share it) | `./output` |
 | `CHROME` | path to Chrome/Chromium for the PDF, if not found | auto-detected |
-| `COMPANYSCAN_SERVICE_NAME` / `_PITCH` / `_CTA` | who fixes it, the pitch and the call to action on the customer scorecard | draft DrGrow copy (set your own before sending) |
+| `COMPANYSCAN_SERVICE_NAME` / `_PITCH` / `_CTA` | who fixes it, the pitch and the call to action on the customer scorecard | draft Obvious Choice Systems copy (set your own before sending) |
 | `DATABASE_URL` | Postgres for the web UI | unset: SQLite `./db.sqlite3` |
 | `DJANGO_DEBUG` | debug mode | `1` without `DATABASE_URL`, else `0` |
 | `DJANGO_SECRET_KEY` | required on a server | dev key |
@@ -223,7 +223,7 @@ Renders the newest `analysis/**/report.md` to `report.html` and `report.pdf` bes
 
 - **What this is costing you:** the growth goal, the estimated value at risk and what each month unfixed costs, an overview, the three costliest losses from the report's business impact (who is lost and what they do instead), and a count of open issues per loss type ("Buyers who never find you: 6 issues").
 - **By area:** each area's score, value at risk, finding counts and the report's summary; **Why it matters** on every area (fixed copy in `scorecard.WHY`, so even an unscored area says what the customer misses); what it's costing (or, for a passing area, what it protects); and **We'll handle**: the report's recommendations for that area's findings, framed as work we do for them.
-- **How DrGrow fixes this:** the service pitch (done for you, not a to-do list), the first three recommendations as what we'll handle first, and the call to action. Name, pitch and call to action come from `COMPANYSCAN_SERVICE_NAME`, `COMPANYSCAN_SERVICE_PITCH` and `COMPANYSCAN_SERVICE_CTA`; the defaults are draft copy, so set your own before sending.
+- **How Obvious Choice Systems fixes this:** the service pitch (done for you, not a to-do list), the first three recommendations as what we'll handle first, and the call to action. Name, pitch and call to action come from `COMPANYSCAN_SERVICE_NAME`, `COMPANYSCAN_SERVICE_PITCH` and `COMPANYSCAN_SERVICE_CTA`; the defaults are draft copy, so set your own before sending.
 
 - **Area score:** its findings averaged as PASS 100, WARNING 50, FAIL 0 (UNKNOWN left out), or its verdicts when it has no findings. **Analytics** is scored from the scan itself (`technical/measurement.json`), not the report: the share of pages with an analytics tool, tag manager or marketing-automation tag. No analytics anywhere scores 0 and is flagged **High risk**, leads the overview and "Where you're losing customers", and takes the largest share of the value at risk. Top-level findings no area claims make up a "Website" area. **Overall:** the mean of the areas that could be scored.
 - **Dollars:** set **Customer lifetime value ($)** and **New customers wanted per year** on the site's edit page. Growth goal = LTV × new customers; estimated at risk = goal × (100 − overall) %, split across areas by their score gaps; each month unfixed = at risk ÷ 12. Without both fields the scorecard shows no dollar value.

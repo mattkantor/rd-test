@@ -55,6 +55,16 @@ class WebCase(TestCase):
 
 
 class WebTests(WebCase):
+    def test_pages_carry_the_obvious_choice_brand(self):
+        bundle(self.root, "acme", "https://acme.test/", "2026-01-01T00:00:00+00:00")
+        self.client.get("/")
+        for path in ("/", "/run/acme", f"/site/{Site.objects.get().pk}/edit"):
+            page = self.client.get(path).text
+            self.assertIn('aria-label="Obvious Choice Systems home">Obvious Choice<i>.</i></a>', page, path)
+            self.assertIn("· Obvious Choice Systems</title>", page, path)
+            self.assertRegex(page, r'<link rel="icon" type="image/svg\+xml" href="/static/mark\.svg\?v=\d+">', path)
+            self.assertNotIn("DrGrow", page, path)
+
     def test_latest_crawl_per_site_is_last_crawled(self):
         bundle(self.root, "acme-old", "https://acme.test/", "2026-01-01T00:00:00+00:00")
         new = bundle(self.root, "acme-new", "https://acme.test/about", "2026-02-01T00:00:00+00:00")

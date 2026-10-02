@@ -64,9 +64,9 @@ ESTIMATE = ("Scores are 100 when every finding in an area passes, 50 when they a
 
 def service():
     """Who fixes it, from COMPANYSCAN_SERVICE_NAME/_PITCH/_CTA. The defaults are draft copy: set your own before sending."""
-    return {"name": os.environ.get("COMPANYSCAN_SERVICE_NAME") or "DrGrow",
+    return {"name": os.environ.get("COMPANYSCAN_SERVICE_NAME") or "Obvious Choice Systems",
             "pitch": os.environ.get("COMPANYSCAN_SERVICE_PITCH") or (
-                "You don't have to fix any of this yourself. DrGrow does the work for you: we fix the gaps that keep "
+                "You don't have to fix any of this yourself. Obvious Choice Systems does the work for you: we fix the gaps that keep "
                 "buyers and AI assistants from choosing you, in order of what they cost you, and re-scan so you can "
                 "see each score move."),
             "cta": os.environ.get("COMPANYSCAN_SERVICE_CTA") or (
