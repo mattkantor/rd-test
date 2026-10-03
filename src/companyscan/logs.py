@@ -38,8 +38,10 @@ def setup(name, console=False):
     root = logging.getLogger()
     level = logging.getLevelName(os.environ.get("COMPANYSCAN_LOG_LEVEL", "INFO").upper())
     level = level if isinstance(level, int) else logging.INFO
-    handlers = [h for h in (handler(name),) if h]
-    if console and not isinstance(handlers[0] if handlers else None, logging.StreamHandler):
+    found = handler(name)
+    # "off" is silent: a NullHandler, so Python's last-resort handler doesn't print warnings to stderr either.
+    handlers = [found] if found else [logging.NullHandler()]
+    if console and found and not isinstance(found, logging.StreamHandler):
         handlers.append(logging.StreamHandler(sys.stderr))
         handlers[-1].setLevel(logging.WARNING)
     for h in handlers:

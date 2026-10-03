@@ -57,6 +57,13 @@ class LogsTest(unittest.TestCase):
             logs.setup("cli")
             logging.getLogger("companyscan.test").error("nowhere")
         self.assertEqual(os.listdir(self.tmp.name), [])
+        import contextlib
+        import io
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), self.env(COMPANYSCAN_LOG_DIR="off"):
+            logs.setup("cli")
+            logging.getLogger("companyscan.test").warning("quiet please")
+        self.assertEqual(err.getvalue(), "")  # Not Python's last-resort stderr handler either.
 
     def test_server_logs_to_stderr_not_a_file(self):
         with self.env(DATABASE_URL="postgres://db", COMPANYSCAN_LOG_DIR=""):
