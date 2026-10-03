@@ -13,7 +13,7 @@ from ..scan.measurement import ads_pixel, shows_ads
 MISSING, UNREADABLE = "not collected", "unreadable"
 # Site-level reports shown as-is; per-page reports are folded into the page cards and only linked raw.
 SITE = ["robots", "sitemap", "crawler-access", "redirects", "llms", "feeds"]
-PER_PAGE = ["indexing", "headers", "schema", "aeo", "measurement", "social-preview", "accessibility", "security", "fonts",
+PER_PAGE = ["indexing", "headers", "schema", "aeo", "measurement", "social-preview", "social-proof", "accessibility", "security", "fonts",
             "copy-scores"]
 DIMENSIONS = ["security", "fonts", "meta_ads", "llm_reputation", "ai_search", "answer_coverage", "practitioners", "google_business", "jev_copy"]
 AREAS = ["Content", "SEO", "AEO", "Social", "Accessibility", "Analytics", "Security"]
@@ -480,6 +480,7 @@ METRICS = {
     "jsonld_pct": ("Pages with JSON-LD", True, pct),
     "aeo_issues": ("Structured-data issue types", False, str),
     "social_issues": ("Social preview issue types", False, str),
+    "proof_pages": ("Pages with social proof", True, str),
     "security_headers": ("Security headers present", True, lambda v: f"{v}/{SECURITY_CHECKS}"),
     "font_families": ("Named font families", False, str),
     "meta_ads": ("Meta ads running", None, str),
@@ -536,6 +537,9 @@ def metrics(model, raw):
     t = raw["social-preview"]
     if isinstance(t, dict):
         put("social_issues", len(as_list(t.get("issue_summary"))))
+    t = raw["social-proof"]
+    if isinstance(t, dict) and t.get("status") in ("PASS", "WARNING", "FAIL"):
+        put("proof_pages", len(as_list(t.get("pages_with_proof"))))
     t = raw["security"]
     if isinstance(t, dict):
         put("security_headers", max(SECURITY_CHECKS - len(as_list(t.get("missing_summary"))), 0))
@@ -567,6 +571,22 @@ def metrics(model, raw):
         put("rating", reviews.get("rating"))
         put("reviews", reviews.get("count"))
     return out
+
+
+PROOF_STATUS = {"PASS": ("good", "Shown and asked"), "FAIL": ("critical", "None found")}
+
+
+def google_reviews(raw):
+    """(text, bad) for Google's part of social proof, or None when google_business didn't run. No listing, or a listing
+    with no reviews, is bad: buyers who check Google see nothing."""
+    g = raw["google_business"]
+    if not isinstance(g, dict) or g.get("status") == "UNKNOWN":
+        return None
+    reviews = as_dict(g.get("reviews"))
+    count, rating = num(reviews.get("count")), num(reviews.get("rating"))
+    if not g.get("found") or not count:
+        return "No Google reviews", True
+    return (f"Google {rating}★ ({count})" if rating is not None else f"Google ({count})"), False
 
 
 def tiles(model, raw):
@@ -658,6 +678,16 @@ def tiles(model, raw):
         out.append(tile("AI reputation", "#reputation", "—", "No ranking in this run"))
     elif "unknown" in rep:
         out.append(tile("AI reputation", "#reputation", "—", "The AI request failed", "neutral", "UNKNOWN"))
+    t = raw["social-proof"]
+    if isinstance(t, dict) and t.get("status") in ("PASS", "WARNING", "FAIL"):
+        level, status = PROOF_STATUS.get(t["status"], ("warning", "Shown, never asked" if t.get("has_proof") else "Asked, never shown"))
+        google = google_reviews(raw)
+        parts = ["pages show reviews or testimonials"] + ([google[0]] if google else []) + \
+            (["Trustpilot widget"] if as_dict(t.get("trustpilot")).get("widget") else [])
+        if google and google[1] and level != "critical":
+            level = "serious"
+        out.append(tile("Social proof", "#site", len(as_list(t.get("pages_with_proof"))), " · ".join(parts), level, status,
+                        key="proof_pages"))
     v = model["metrics"]
     if isinstance(model["ai_search"].get("scores"), dict):
         rank, rate = v.get("search_rank"), v.get("search_mention_rate")
@@ -727,6 +757,7 @@ def facts(raw):
     only; they aren't trended."""
     yes = lambda v: v if isinstance(v, bool) else None
     m, sec, g = raw["measurement"], raw["security"], raw["google_business"]
+    sp = raw["social-proof"] if isinstance(raw["social-proof"], dict) and raw["social-proof"].get("status") != "UNKNOWN" else None
     m = m if isinstance(m, dict) else None
     pixels = ads_pixel(m) if m else None
     pixel_detail = (", ".join(pixels["pixels"]) if pixels["present"] else "none seen; a tag manager may load one"
@@ -734,6 +765,8 @@ def facts(raw):
     return [("Analytics", yes(m.get("has_measurement")) if m else None, "?sort=analytics#pages", ""),
             ("Consent tool", yes(m.get("has_consent_tool")) if m else None, "?sort=analytics#pages", ""),
             ("Ad pixel", pixels["present"] if m else None, "#site", pixel_detail),
+            ("Reviews on site", yes(sp.get("has_proof")) if sp else None, "#site", ""),
+            ("Review or referral link", yes(sp.get("has_ask")) if sp else None, "#site", ""),
             ("HTTPS", yes(sec.get("https")) if isinstance(sec, dict) else None, "?sort=security#pages", ""),
             ("Google listing", bool(g.get("found")) if isinstance(g, dict) and g.get("status") != "UNKNOWN" else None, "#listing", "")]
 
@@ -778,9 +811,19 @@ def attention(model, raw):
     t = raw["google_business"]
     if isinstance(t, dict) and t.get("status") == "OBSERVED":
         if t.get("found") is False:
-            add("warning", "No Google Business Profile matched this site", "#listing")
+            add("serious", "No Google Business Profile: buyers who check Google see no reviews", "#listing")
+        elif not num(as_dict(t.get("reviews")).get("count")):
+            add("serious", "The Google listing has no reviews", "#listing")
         for field in as_list(t.get("mismatches")):
             add("serious", f"Google listing {str(field).replace('_', ' ')} differs from the website", "#listing")
+    t = raw["social-proof"]
+    if isinstance(t, dict) and t.get("status") in ("WARNING", "FAIL"):
+        if not t.get("has_proof") and not t.get("has_ask"):
+            add("serious", "No reviews or testimonials on the site, and no way to leave one", "#site")
+        elif not t.get("has_proof"):
+            add("serious", "No reviews or testimonials shown on the site", "#site")
+        else:
+            add("warning", "No way for customers to leave a review, testimonial or referral", "#site")
     t = raw["accessibility"]
     if isinstance(t, dict) and num(t.get("finding_count")):
         add("warning", f"{plural(t['finding_count'], 'potential accessibility barrier')} (WCAG 2.2)", "?sort=accessibility#pages")
@@ -924,6 +967,22 @@ def site_cards(bundle, raw):
                           [("Named families", ", ".join(named) or "none"), ("Most used", named[0] if named else None)],
                           table_label="Families across the site", rows=as_list(fonts.get("families")), note=fonts.get("limitation"),
                           file="technical/fonts.json"))
+    t = raw["social-proof"]
+    if isinstance(t, dict) and t.get("status") in ("PASS", "WARNING", "FAIL"):
+        level, status = PROOF_STATUS.get(t["status"], ("warning", "Shown, never asked" if t.get("has_proof") else "Asked, never shown"))
+        tp = as_dict(t.get("trustpilot"))
+        trustpilot = ", ".join(n for n, on in (("widget", tp.get("widget")), ("profile link", tp.get("profile_link")),
+                                               ("score shown", tp.get("score_text"))) if on) or "not on the site"
+        cards.append(info("Social proof", level, status,
+                          [("Pages with proof", len(as_list(t.get("pages_with_proof")))),
+                           ("Asks for reviews or referrals", "yes" if t.get("has_ask") else "no"),
+                           ("Trustpilot", trustpilot), ("Review profiles linked", ", ".join(as_dict(t.get("profiles"))) or "none")],
+                          table_label="What was found",
+                          rows=[{"what": e.get("kind"), "page": e.get("url"), "example": e.get("example")}
+                                for e in as_list(t.get("examples")) if isinstance(e, dict)],
+                          note=" ".join(str(x) for x in as_list(t.get("limitations"))), file="technical/social-proof.json"))
+    else:
+        cards.append(missing_card("Social proof", t, "technical/social-proof.json"))
     return cards
 
 

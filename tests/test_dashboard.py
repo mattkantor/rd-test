@@ -279,14 +279,50 @@ class LoadTest(unittest.TestCase):
     def test_state_row_shows_yes_no_facts(self):
         m = load(self.bundle)
         self.assertEqual([(label, value) for label, value, _, _ in m["facts"]],
-                         [("Analytics", True), ("Consent tool", False), ("Ad pixel", True), ("HTTPS", True), ("Google listing", None)])
+                         [("Analytics", True), ("Consent tool", False), ("Ad pixel", True), ("Reviews on site", None),
+                          ("Review or referral link", None), ("HTTPS", True), ("Google listing", None)])
         self.assertEqual(m["facts"][2][3], "Meta Pixel")
         self.assertTrue(m["ai_note"])
+
+    def proof(self, **summary):
+        write(self.bundle, "technical/social-proof.json", {"kind": "INFERRED", "status": "WARNING", "pages_checked": 3,
+            "has_proof": True, "has_ask": False, "pages_with_proof": ["https://acme.test/"],
+            "signals": {"attributed_quote": 1}, "profiles": {},
+            "examples": [{"kind": "attributed_quote", "url": "https://acme.test/", "example": "<b>Chris</b>, founder “Great”"}],
+            "trustpilot": {"widget": True, "profile_link": None, "review_link": None, "score_text": None}, **summary})
+
+    def test_social_proof_tile_facts_card_and_anomalies(self):
+        self.proof()
+        m = load(self.bundle)
+        tile = {t["title"]: t for t in m["tiles"]}["Social proof"]
+        self.assertEqual((tile["value"], tile["status"], tile["key"]), (1, "Shown, never asked", "proof_pages"))
+        self.assertIn("Trustpilot widget", tile["sub"])
+        self.assertNotIn("Google", tile["sub"])  # google_business didn't run in this crawl: nothing said about Google.
+        self.assertEqual(m["metrics"]["proof_pages"], 1)
+        facts = {label: value for label, value, _, _ in m["facts"]}
+        self.assertEqual((facts["Reviews on site"], facts["Review or referral link"]), (True, False))
+        self.assertIn(("warning", "No way for customers to leave a review, testimonial or referral"),
+                      [(a["level"], a["text"]) for a in m["attention"]])
+        card = next(c for c in m["site"] if c["title"] == "Social proof")
+        self.assertEqual(card["file"], "technical/social-proof.json")
+
+    def test_no_google_reviews_counts_against_social_proof(self):
+        self.proof(status="FAIL", has_proof=False, pages_with_proof=[])
+        write(self.bundle, "technical/google_business.json", {"status": "OBSERVED", "found": False})
+        m = load(self.bundle)
+        tile = {t["title"]: t for t in m["tiles"]}["Social proof"]
+        self.assertIn("No Google reviews", tile["sub"])
+        self.assertEqual(tile["level"], "critical")
+        texts = [(a["level"], a["text"]) for a in m["attention"]]
+        self.assertIn(("serious", "No reviews or testimonials on the site, and no way to leave one"), texts)
+        self.assertIn(("serious", "No Google Business Profile: buyers who check Google see no reviews"), texts)
+        write(self.bundle, "technical/google_business.json", {"status": "OBSERVED", "found": True, "reviews": {"rating": 4.8, "count": 84}})
+        self.assertIn("Google 4.8★ (84)", {t["title"]: t for t in load(self.bundle)["tiles"]}["Social proof"]["sub"])
 
     def test_sections(self):
         m = load(self.bundle)
         site = {c["title"]: c for c in m["site"]}
-        self.assertEqual(list(site), ["robots.txt", "Sitemap", "AI crawler access", "llms.txt", "Redirects", "Fonts"])
+        self.assertEqual(list(site), ["robots.txt", "Sitemap", "AI crawler access", "llms.txt", "Redirects", "Fonts", "Social proof"])
         self.assertEqual((site["robots.txt"]["level"], site["robots.txt"]["status"], site["robots.txt"]["text"]),
                          ("good", "Crawling rules found", "User-agent: *\nAllow: /"))
         self.assertEqual((site["Sitemap"]["status"], site["Sitemap"]["file"]), ("Not collected", None))
@@ -573,6 +609,15 @@ class DashboardPageTest(WebCase):  # Skipped outside python manage.py test.
         page = self.client.get("/run/acme").text
         self.assertIn("(older)", page)
         self.assertIn("&lt;b&gt;Cost?&lt;/b&gt;", page)
+
+    def test_renders_social_proof_examples_escaped(self):
+        d = full_bundle(self.root)
+        write(d, "technical/social-proof.json", {"status": "WARNING", "has_proof": True, "has_ask": False, "pages_checked": 1,
+                                                 "pages_with_proof": [], "signals": {}, "profiles": {}, "trustpilot": {},
+                                                 "examples": [{"kind": "attributed_quote", "url": "https://acme.test/", "example": "<b>Chris</b>"}]})
+        page = self.client.get("/run/acme").text
+        self.assertIn("&lt;b&gt;Chris&lt;/b&gt;", page)
+        self.assertNotIn("<b>Chris</b>", page)
 
     def test_renders_every_section_safely(self):
         full_bundle(self.root)

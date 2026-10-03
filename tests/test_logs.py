@@ -21,9 +21,11 @@ class LogsTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.hooks = sys.excepthook, threading.excepthook
+        self.handlers = logging.getLogger().handlers[:]  # Whatever the test run configured (manage.py: silent).
 
     def tearDown(self):
         logs.reset()
+        logging.getLogger().handlers[:] = self.handlers
         sys.excepthook, threading.excepthook = self.hooks
         self.tmp.cleanup()
 
@@ -105,13 +107,14 @@ class CliLogsTest(unittest.TestCase):
         import io
         from companyscan.cli import main
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"COMPANYSCAN_LOG_DIR": tmp, "DATABASE_URL": ""}):
-            hooks = sys.excepthook, threading.excepthook
+            hooks, handlers = (sys.excepthook, threading.excepthook), logging.getLogger().handlers[:]
             out = io.StringIO()
             try:
                 with contextlib.redirect_stdout(out):
                     self.assertEqual(main(["fixpack", str(Path(tmp) / "nope"), "--json"]), 2)
             finally:
                 logs.reset()
+                logging.getLogger().handlers[:] = handlers
                 sys.excepthook, threading.excepthook = hooks
             text = (Path(tmp) / "cli.log").read_text()
         self.assertEqual(out.getvalue().count("\n"), 1)  # stdout is still exactly one JSON line.
