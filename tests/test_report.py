@@ -288,3 +288,28 @@ class PrintPdfTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ChromeArgsTest(unittest.TestCase):
+    def test_extra_chrome_flags_come_from_the_environment(self):
+        seen = []
+
+        class Proc:
+            returncode = 1
+
+            def poll(self):
+                return 1
+
+            def kill(self):
+                pass
+
+            def wait(self, timeout=None):
+                return 1
+
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"CHROME_ARGS": "--no-sandbox --disable-dev-shm-usage"}), \
+                patch.object(pdf_mod.subprocess, "Popen", lambda args, **kw: seen.append(args) or Proc()):
+            html = Path(tmp) / "r.html"
+            html.write_text("<p>hi</p>")
+            with self.assertRaises(ValueError):  # The fake Chrome exits without writing; only the flags matter here.
+                pdf_mod.print_pdf("chromium", html, Path(tmp) / "r.pdf", timeout=1)
+        self.assertEqual(seen[0][:3], ["chromium", "--no-sandbox", "--disable-dev-shm-usage"])

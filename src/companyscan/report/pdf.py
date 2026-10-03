@@ -222,7 +222,8 @@ def print_pdf(chrome, html, pdf, timeout=180):
     # Headless Chrome on macOS can write the PDF and then never exit, so wait for a finished file, not the process.
     pdf.unlink(missing_ok=True)
     with tempfile.TemporaryDirectory() as profile:  # Separate profile so it doesn't attach to a running Chrome.
-        proc = subprocess.Popen([chrome, "--headless", "--disable-gpu", "--no-pdf-header-footer", f"--user-data-dir={profile}",
+        # CHROME_ARGS: extra flags, e.g. "--no-sandbox --disable-dev-shm-usage" inside a container (the deploy image).
+        proc = subprocess.Popen([chrome, *os.environ.get("CHROME_ARGS", "").split(), "--headless", "--disable-gpu", "--no-pdf-header-footer", f"--user-data-dir={profile}",
                                  f"--print-to-pdf={pdf}", html.as_uri()], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         deadline, size = time.monotonic() + timeout, -1
         try:

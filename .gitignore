@@ -13,3 +13,4 @@ huey.sqlite3*
 staticfiles/
 logs/
 customers/
+backups/

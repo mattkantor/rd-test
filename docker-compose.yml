@@ -1,0 +1,75 @@
+# The whole app on one host: Postgres, the Django web app, the Huey worker, Caddy for HTTPS and a nightly database
+# backup. Settings come from .env (see env.example; deploy/bootstrap.sh writes it). Web and worker share the `data`
+# volume: evidence bundles (output/) and the job queue (huey.sqlite3) must be on one host.
+x-app: &app
+  image: companyscan
+  build: .
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    DATABASE_URL: postgres://companyscan:${POSTGRES_PASSWORD}@db:5432/companyscan
+    DJANGO_ALLOWED_HOSTS: ${DOMAIN:?set DOMAIN in .env}
+    DJANGO_CSRF_TRUSTED_ORIGINS: https://${DOMAIN}
+  volumes:
+    - data:/data
+  depends_on:
+    db:
+      condition: service_healthy
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: companyscan
+      POSTGRES_USER: companyscan
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U companyscan -d companyscan"]
+      interval: 5s
+      retries: 30
+
+  web:
+    <<: *app
+    command: web
+
+  worker:
+    <<: *app
+    command: worker
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
+  # Nightly pg_dump into ./backups on the droplet, keeping 14 days.
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    entrypoint: ["sh", "-c", "while true; do pg_dump -h db -U companyscan companyscan | gzip > /backups/companyscan-$$(date +%F).sql.gz && find /backups -name '*.sql.gz' -mtime +14 -delete; sleep 86400; done"]
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  data:
+  pgdata:
+  caddy_data:
+  caddy_config:

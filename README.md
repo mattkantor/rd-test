@@ -188,6 +188,21 @@ Configuration is by environment; see [Environment](#environment). `DATABASE_URL`
 
 On a server, run `python manage.py collectstatic` (WhiteNoise serves the files) and serve `companyscan.server.wsgi:application` with any WSGI server.
 
+### Deploy (DigitalOcean droplet, Docker Compose)
+
+`docker-compose.yml` runs everything on one host: **Postgres**, the **web** app (gunicorn), the Huey **worker**, **Caddy** (HTTPS from Let's Encrypt for your domain) and a nightly **backup** (`pg_dump` to `./backups`, 14 days kept). Web and worker share one image (`Dockerfile`: Python, pandoc, Chromium) and the `data` volume, which holds the evidence bundles and the job queue; they must stay on one host.
+
+1. Create an Ubuntu 24.04 droplet (2 GB RAM or more; Chromium and a crawl together need it) and point your domain's DNS A record at it.
+2. As root on the droplet:
+   ```sh
+   curl -fsSL https://raw.githubusercontent.com/<you>/<repo>/main/deploy/bootstrap.sh -o bootstrap.sh
+   bash bootstrap.sh https://github.com/<you>/<repo>.git app.example.com
+   ```
+   It installs Docker, opens ports 22/80/443, adds 2 GB swap, clones to `/opt/companyscan`, writes `.env` from `env.example` with a generated `DJANGO_SECRET_KEY` and `POSTGRES_PASSWORD`, and starts the stack. For a private repo, use a URL with a read-only token or add a deploy key first.
+3. Add your API keys to `/opt/companyscan/.env`, then `docker compose up -d` and create a login with `docker compose exec web python manage.py createsuperuser`.
+
+Updates: `/opt/companyscan/deploy/update.sh` (pulls, rebuilds, restarts; migrations run on start). Logs: `docker compose logs -f web worker`. A CLI scan on the server: `docker compose exec worker companyscan scan https://example.com`. Restore a backup: `gunzip -c backups/companyscan-<date>.sql.gz | docker compose exec -T db psql -U companyscan companyscan`.
+
 Each site's **Dashboard** link (`/site/<id>`) is the site page: the dashboard of its latest crawl (the current assessment) plus a **History** table of every crawl, newest first. Older crawls open at `/run/<bundle>`, marked "older assessment" with a link back to the current one. A dashboard shows everything that crawl captured:
 - **Cards:** a summary card per area.
 - **Since last run** (on the overview, when an earlier run of the site exists): AI reputation, AI search, answer coverage, practitioners and the Google listing, each against the newest earlier run that has that check. Shows the metrics then and now (better, worse or the same), which questions changed, and which competitors and cited sites came and went. See [Tracking over time](#tracking-over-time).

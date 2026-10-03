@@ -16,6 +16,9 @@ if not SECRET_KEY:
     raise RuntimeError("Set DJANGO_SECRET_KEY when DEBUG is off")
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
 CSRF_TRUSTED_ORIGINS = [o for o in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if o]
+if not DEBUG:  # Behind Caddy (deploy/), which terminates HTTPS and says so in X-Forwarded-Proto.
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = True
 
 # Evidence bundles stay on disk; the database indexes them and tracks jobs. Same default as the CLI.
 COMPANYSCAN_OUTPUT = Path(os.environ.get("COMPANYSCAN_OUTPUT", "output")).resolve()
