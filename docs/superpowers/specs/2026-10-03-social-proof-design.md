@@ -9,10 +9,8 @@ when the business uses it) count. No Google listing means no Google reviews, whi
 Agreed with the user:
 - On-site proof **or** an ask is the minimum; both is a pass.
 - Google: no listing found, or a listing with no reviews, counts against social proof.
-- Trustpilot is read through its public widget endpoint, which needs the business's Trustpilot ID. The ID is never
-  looked up by domain (the profile page is disallowed by robots.txt and bot-blocked; the API needs a key). It comes only
-  from a TrustBox found on the site by a crawl, saved once to the site profile, or from the profile field filled in by
-  hand. Otherwise Trustpilot is "not found".
+- Trustpilot is checked **on the site only**: its widget, links to the business's Trustpilot profile, and Trustpilot
+  scores printed on the page. No request ever goes to Trustpilot (no API, widget endpoint or profile page) for now.
 
 ## 1. On-site check: `technical/social-proof.json` (always written, no network)
 
@@ -38,50 +36,32 @@ Per page, the signals found (each with the page URL and a short quoted example �
 **Profile links**: links to the business's review profiles (Google Maps place, `trustpilot.com/review/<domain>`, Yelp
 `biz`, G2, Capterra, Clutch), recorded as profiles, not as proof.
 
-**Trustpilot widget IDs**: the extractor records `data-businessunit-id` and `data-template-id` from
-`.trustpilot-widget` elements on each page (`pages/*.json` → `trustpilot_widgets`). Today it drops data attributes.
+**Trustpilot on the site** (`trustpilot` in the summary): `widget` (a `widget.trustpilot.com` script, or an element
+with class `trustpilot-widget`, which the extractor now records per page as `pages/*.json` → `trustpilot_widgets`:
+its `data-businessunit-id`, `data-template-id` and `data-style-height`), `profile_link` (a link to
+`trustpilot.com/review/…`), `review_link` (`trustpilot.com/evaluate/…`, also a `review_link` signal), and
+`score_text` (visible text naming Trustpilot within a sentence that also holds a rating, TrustScore or review count,
+e.g. "Rated 4.8 / 5 on Trustpilot"; quoted as found, never parsed into a score). A widget counts as a `review_widget`;
+score text counts as proof.
 
 Summary fields: `has_proof`, `has_ask`, `pages_with_proof`, `signals` (counts by kind), `examples` (≤ 10), `profiles`,
-`trustpilot_ids` (distinct), and `status`: `PASS` (proof and ask), `WARNING` (one of them), `FAIL` (neither).
+`trustpilot` (above), and `status`: `PASS` (proof and ask), `WARNING` (one of them), `FAIL` (neither).
 Heuristic and labelled `INFERRED`; `limitations` says HTML only, widgets that load reviews by JavaScript are seen as
 widgets, not counted as reviews.
 
-## 2. `trustpilot` dimension (opt-in, network)
-
-`dimensions/trustpilot.py`, registered in `DIMENSIONS`, included in the dashboard's full re-crawl.
-
-- ID source, in order: `--trustpilot-id` (the site profile), else the first `trustpilot_ids` entry from this crawl.
-  None: `{"status": "UNKNOWN", "reason": "not_found"}`.
-- Fetch `https://widget.trustpilot.com/trustbox-data/<template>?businessunitId=<id>&locale=en-US` through the crawler's
-  `Client` (robots-aware: Trustpilot's widget robots.txt allows `/trustbox-data/`), using the widget's template id or
-  `5419b6a8b0d04a076446a9ad` (Mini).
-- Ownership: accept only when `businessUnit.websiteUrl` or `identifyingName` has the scanned domain (www. ignored).
-  Mismatch: `status: WARNING`, `reason: "domain_mismatch"`, both domains recorded, no scores used.
-- Record: `trust_score`, `stars`, `reviews` (total), `by_stars` (1–5), `display_name`, `website_url`, `id`, `source`
-  (`profile` or `widget`), `kind: OBSERVED`. Network/HTTP failure: `UNKNOWN` with the error.
-- Rubric: `references/trustpilot.md`, listed in step 7b of the skill.
-
-## 3. Site profile: `Site.trustpilot_id`
-
-- New optional field "Trustpilot business ID" beside "Google place ID", help text: "Filled in by the first crawl that
-  finds a Trustpilot widget; or paste the 24-character ID from the TrustBox code. Clear it to look again."
-- Passed to crawls as `--trustpilot-id` (new CLI flag, stored in `config`).
-- `remember()` saves the ID from `technical/trustpilot.json` when the dimension used a widget ID and accepted it, and
-  the field is empty, as it already does for the Google place ID.
-
-## 4. Google counts toward social proof
+## 2. Google counts toward social proof
 
 No new fetch: `google_business` already records `found`, `reviews.rating` and `reviews.count`. The judgment combines
 them (report rubric and dashboard): not found, or found with no reviews, is a social-proof FAIL item ("No Google
 reviews: buyers who check Google see nothing"). Found with reviews is proof.
 
-## 5. Where it shows
+## 3. Where it shows
 
 - **Dashboard**:
-  - A **Social proof** tile: on-site verdict as the value, sub-line "Google 4.8★ (84) · Trustpilot 4.4 (551)" or "No
+  - A **Social proof** tile: on-site verdict as the value, sub-line "Google 4.8★ (84) · Trustpilot widget" or "No
     Google reviews", level from the worst of on-site and Google. Key metric `proof_pages` (pages with proof).
   - The ✓/✗ row gains **Reviews on site** and **Review link**.
-  - New trended metrics: `proof_pages`, `trustpilot_reviews`, `trustpilot_score`.
+  - New trended metric: `proof_pages`.
   - The Site-wide tab gets a Social proof card listing signals with their quoted examples and pages.
   - Anomaly: "No social proof on the site" (FAIL) or "No way for customers to leave a review or referral" (WARNING),
     and "No Google reviews".
@@ -96,7 +76,7 @@ reviews: buyers who check Google see nothing"). Found with reviews is proof.
     their attribution); none on the site: `TODO(owner): two or three real customer quotes with name and role`.
   - Add a "Leave us a review" link to the Google write-review URL built from `place_id` when known
     (`https://search.google.com/local/writereview?placeid=<id>`), else `TODO(owner): Google review link`; and to the
-    Trustpilot `evaluate` URL when Trustpilot is in use.
+    Trustpilot `evaluate` URL when the site already links to its Trustpilot profile.
   - Add a referral or "share your experience" prompt on the contact and thank-you pages.
   - Don't: invent testimonials, names, ratings or review counts; add `AggregateRating` markup without real reviews.
   - Off-site (OWNER-TODO): "Get a Google Business Profile and ask your last 10 customers for a review" when Google has
@@ -107,21 +87,19 @@ reviews: buyers who check Google see nothing"). Found with reviews is proof.
 - `scan/social_proof.py`: fixture pages for each signal kind, none, proof-only (WARNING), ask-only (WARNING), both
   (PASS); quoted examples capped and stripped; the homepage of the real bundle shape (quotes without JSON-LD) finds
   `attributed_quote`.
-- Extractor: a `.trustpilot-widget` div records its ids.
-- `trustpilot` dimension: stubbed `Client.get` returning the widget JSON (match, mismatch, HTTP error, bad JSON), ID
-  from profile vs widget, no ID → `not_found`. No live calls.
-- `remember()` stores a widget-found ID once; a profile ID is never overwritten.
+- Extractor: a `.trustpilot-widget` div records its data attributes.
+- Trustpilot on the site: widget script, widget div, profile link, evaluate link and score text each detected; a
+  sentence naming Trustpilot without a rating isn't score text. The check never makes a network request.
 - Dashboard: tile, ✓/✗ items, anomaly text, "No Google reviews" when `google_business.found` is false.
 - Scorecard: `social_proof` lands in Trust. Fix pack: task created/skipped, write-review link from `place_id`, no
   invented quotes.
 
 ## Out of scope
 
-Reading reviews from Yelp, G2, Capterra or Clutch (only links and widgets are detected), Trustpilot lookups by domain,
-judging review sentiment, and rendering JavaScript widgets.
+Any request to Trustpilot (API, widget endpoint or profile page) and a stored Trustpilot ID; reading reviews from Yelp,
+G2, Capterra or Clutch (only links and widgets are detected); judging review sentiment; rendering JavaScript widgets.
 
 ## Docs
 
-README: the social-proof report in the bundle layout and Dimensions table (`trustpilot`), the new profile field and
-`--trustpilot-id` flag. `docs/output-schema.md`: `technical/social-proof.json`, `technical/trustpilot.json`,
-`pages/*.json` `trustpilot_widgets`.
+README: the social-proof report in the bundle layout and the checks list. `docs/output-schema.md`:
+`technical/social-proof.json` and `pages/*.json` `trustpilot_widgets`.
