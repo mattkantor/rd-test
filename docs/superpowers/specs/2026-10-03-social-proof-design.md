@@ -3,8 +3,8 @@
 ## Goal
 
 Make sure every site is checked for social proof. A buyer should see reviews or testimonials on the site, and there
-should be a way for customers to leave a review, a testimonial or a referral. Off-site, Google reviews (and Trustpilot
-when the business uses it) count. No Google listing means no Google reviews, which is a failure.
+should be a way for customers to leave a review, a testimonial or a referral. Off-site, Google reviews count; a
+Trustpilot widget, profile link or score shown on the site counts as on-site proof. No Google listing means no Google reviews, which is a failure.
 
 Agreed with the user:
 - On-site proof **or** an ask is the minimum; both is a pass.
