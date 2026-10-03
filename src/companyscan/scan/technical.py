@@ -4,6 +4,7 @@ from collections import Counter
 from .crawler import origin
 from .measurement import summarize
 from .schema import site_entities
+from .social_proof import check as social_proof
 
 AI_AGENTS = ["GPTBot", "OAI-SearchBot", "ChatGPT-User", "ClaudeBot", "Claude-User", "Claude-SearchBot", "PerplexityBot", "Google-Extended"]
 
@@ -40,7 +41,7 @@ def reports(client, discovery, robots, pages):
             "feeds": [{"source": p["url"], **feed} for p in pages for feed in p.get("feeds", [])],
             "measurement": summarize(pages),
             "aeo": aeo(pages),
-            "social-preview": social_preview(pages)}
+            "social-preview": social_preview(pages), "social-proof": social_proof(pages)}
 
 
 def aeo(pages):

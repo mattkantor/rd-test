@@ -118,7 +118,7 @@ class ScannerTests(unittest.TestCase):
             self.assertTrue(all(not u["robots_allowed"] for u in checks[0]["urls"]))
             indexing = json.loads((root / "technical/indexing.json").read_text())
             self.assertTrue(next(p for p in indexing if p["url"].endswith("/noindex"))["noindex_observed"])
-            for report in ("measurement", "aeo", "social-preview"):
+            for report in ("measurement", "aeo", "social-preview", "social-proof"):
                 self.assertTrue((root / f"technical/{report}.json").exists())
             measurement = json.loads((root / "technical/measurement.json").read_text())
             self.assertFalse(measurement["has_measurement"])  # Fixture site has no analytics.

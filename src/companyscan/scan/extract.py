@@ -27,6 +27,7 @@ class Parser(HTMLParser):
         self.script_srcs, self.inline_js = [], []
         self.style, self.css = None, []
         self.hidden = 0
+        self.trustpilot = []
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
@@ -47,6 +48,8 @@ class Parser(HTMLParser):
             self.css.append(attrs["style"])
         if tag == "iframe" and attrs.get("src"):
             self.script_srcs.append(attrs["src"])
+        if "trustpilot-widget" in (attrs.get("class") or "").split():
+            self.trustpilot.append({k.replace("-", "_"): attrs.get(f"data-{k}") for k in ("businessunit-id", "template-id", "style-height")})
         if tag == "meta":
             self.metas.append(attrs)
         if tag == "link":
@@ -198,6 +201,7 @@ def extract(html: str, url: str) -> dict:
                       if set(l.get("rel", "").lower().split()) & {"icon", "apple-touch-icon"}],
             "script_sources": sorted(set(filter(None, (p.safe_url(s) or s for s in p.script_srcs)))),
             "measurement": detect(p.script_srcs, "\n".join(p.inline_js)),
+            "trustpilot_widgets": p.trustpilot,
             "stylesheets": [u for l in p.rel_links if "stylesheet" in l.get("rel", "").lower().split() and (u := p.safe_url(l.get("href", "")))],
             "inline_font_families": font_families("\n".join(p.css)),
             "feeds": feeds, "classification": classify(url, title, p.headings),
