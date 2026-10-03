@@ -55,6 +55,9 @@ WHY = {
 }
 WHY["analytics"] = ("Analytics is how you know who visits, where they came from and what makes them get in touch. "
                     "Without it you can't tell which marketing works, so every decision is a guess.")
+WHY["social_proof"] = ("Buyers trust other customers more than anything you say about yourself. Reviews and testimonials "
+                       "where they decide, and an easy way for happy customers to leave one, are what tip them your way.")
+LABELS["social_proof"] = "Social proof"
 WHY_DEFAULT = "This is part of how buyers find, judge and choose a business like yours online."
 COUNT_WORDS = {"FAIL": "failed", "WARNING": "warning", "PASS": "passed", "UNKNOWN": "unknown"}
 ESTIMATE = ("Scores are 100 when every finding in an area passes, 50 when they are all warnings, 0 when they all fail. "

@@ -76,3 +76,17 @@ class SocialProofTest(unittest.TestCase):
                          [{"businessunit_id": "5419b6a8", "template_id": "t1", "style_height": "24px"}])
         result = social_proof.check([page(trustpilot_widgets=[{"businessunit_id": "5419b6a8"}])])
         self.assertTrue(result["trustpilot"]["widget"])
+
+
+class SocialProofReportTest(unittest.TestCase):
+    def test_rubric_is_shipped_and_named_in_the_skill(self):
+        from pathlib import Path
+        from companyscan.report.analyze import SKILL, rubrics
+        self.assertIn("social_proof.md", SKILL.read_text())
+        self.assertTrue((SKILL.parent / "references/social_proof.md").exists())
+        self.assertIn("# references/social_proof.md", rubrics(Path("/nonexistent")))  # Always applies.
+
+    def test_scorecard_explains_social_proof(self):
+        from companyscan.report import scorecard
+        self.assertIn("Buyers trust other customers", scorecard.WHY["social_proof"])
+        self.assertEqual(scorecard.LABELS["social_proof"], "Social proof")
