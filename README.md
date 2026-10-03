@@ -5,7 +5,7 @@ A deterministic, dependency-free Python CLI that captures public company website
 ## How it works
 
 1. **Crawl.** `companyscan` reads robots.txt and sitemaps, then crawls the site (same origin, bounded by `--max-pages` and `--max-depth`). Each page's text, links, JSON-LD, metadata, copy scores and accessibility checks are extracted.
-2. **Technical reports.** Robots, sitemaps, schema, redirects, headers, indexing, `llms.txt`, feeds, analytics tags, AEO and social previews are always written.
+2. **Technical reports.** Robots, sitemaps, schema, redirects, headers, indexing, `llms.txt`, feeds, analytics tags, AEO, social previews and social proof are always written.
 3. **Dimensions (optional).** Extra checks such as security, fonts, LLM reputation, AI search, answer coverage, practitioners, Google Business Profile, Meta ads and Jev copy scoring. Some call external APIs and need keys (see [Environment](#environment)).
 4. **Bundle.** Everything is written to a fresh `output/<host>-<YYYYMMDD-HHMMSS>/` folder with a `manifest.json` of SHA-256 hashes. Evidence is never overwritten.
 5. **Report (optional).** **Generate report** (web UI) or the `footprint-analyze` skill reads the bundle and writes `analysis/report.md`, `analysis/analysis.json` and a designed PDF. The scanner itself never interprets.
@@ -238,6 +238,10 @@ Renders the newest `analysis/**/report.md` to `report.html` and `report.pdf` bes
 - `data/*.json`: the full lists behind a task (pages, questions, passages), read only by that task.
 - `OWNER-TODO.md`: facts the agent needs from the owner, and off-site work from the report (Google listing, third-party mentions, AI reputation, ads).
 - Findings no task covers are listed under **Also noted**. The zip is rebuilt on every download, so it always matches the newest report.
+
+### Social proof
+
+Every crawl writes `technical/social-proof.json`: whether the site shows reviews or testimonials (JSON-LD reviews, a testimonials section, attributed quotes, review widgets, a Trustpilot score printed on the page) and whether it asks customers for a review, a testimonial or a referral (review links including Google's write-review link, "share your experience", "refer a friend"). Both is `PASS`, one is `WARNING`, neither is `FAIL`. Trustpilot is only what the site shows (its widget, a link to the profile, a printed score); nothing is requested from Trustpilot. Google reviews come from `google_business`: no listing, or a listing without reviews, counts against social proof. The dashboard shows a **Social proof** tile and card, the report judges it with `references/social_proof.md`, it sits in the scorecard's Trust stage, and the fix pack gets a "Show and ask for social proof" task that never invents testimonials.
 
 ## Dimensions
 
