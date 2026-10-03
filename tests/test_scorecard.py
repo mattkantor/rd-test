@@ -59,7 +59,24 @@ class ScorecardTest(unittest.TestCase):
         self.assertEqual(page.count("<dt>Why it matters</dt>"), len(card["areas"]))  # Every area, even unscored ones.
         self.assertIn("Your Google listing is often the first thing", page)
         self.assertIn("<dt>We'll handle</dt>", page)
-        self.assertIn("What we’ll handle first", page)
+        self.assertIn("Get chosen: what we’ll fix first", page)
+        self.assertIn("Stay chosen: what you get every month", page)
+        self.assertIn("new customers, not rankings or scores", page)
+
+    def test_areas_are_grouped_into_find_trust_choose(self):
+        card = scorecard.build(ANALYSIS, ltv=2000, customers=10)
+        grouped = [(name, [a["key"] for a in found]) for name, _, found in scorecard.stages(card["areas"])]
+        self.assertEqual(grouped, [("Find", ["google_business", "technical_marketing", "meta_ads"]),
+                                   ("Choose", ["website", "copy"])])
+        page = scorecard.html(card, "acme.test", "")
+        self.assertIn("Can the people looking for what you do discover you?", page)
+        self.assertIn("<b>50</b>", page)  # Find: google_business 25 and technical_marketing 75; meta_ads is unscored.
+        self.assertIn("$5,067 at risk", page)  # The same stage's areas: 3800 + 1267.
+        self.assertIn("are you the business they find, trust and choose?", page)
+        # An area no stage claims still shows up rather than vanishing.
+        odd = {**ANALYSIS, "brand_new_dimension": {"verdict": "FAIL", "summary": "Untriaged."}}
+        names = [name for name, _, _ in scorecard.stages(scorecard.build(odd)["areas"])]
+        self.assertEqual(names[-1], "Also checked")
 
     def test_hidden_areas_are_left_out(self):
         keys = [a["key"] for a in scorecard.build(ANALYSIS, hide={"meta_ads"})["areas"]]

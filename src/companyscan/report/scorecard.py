@@ -18,7 +18,8 @@ WEIGHT = {"PASS": 1, "LOW": 1, "INFO": 1, "WARNING": 0.5, "MEDIUM": 0.5, "FAIL":
 # analysis.json keys that aren't areas.
 NOT_AREAS = {"source_manifest", "coverage", "comprehension", "business_impact_summary"}
 LABELS = {**LABELS, "copy": "Website copy", "technical_marketing": "Technical marketing", "security": "Security",
-          "fonts": "Fonts", "citation_gap": "Cited by AI search", "website": "Website"}
+          "fonts": "Fonts", "citation_gap": "Cited by AI search", "website": "Website",
+          "technical": "Crawling and access"}
 # business-impact.md loss types, said from the owner's side.
 LOSS_WORDS = {"leads": "Enquiries you never get", "conversions": "Interested buyers who don't book", "deal_value": "Deals that close smaller",
               "sales_cycle": "Deals that stall", "trust": "Buyers who doubt you", "visibility": "Buyers who never find you",
@@ -53,6 +54,8 @@ WHY = {
     "answer_coverage": "Buyers ask about cost, timing and fit before they call. If your site doesn't answer, they ask "
                        "someone else's site, or an AI that quotes a competitor.",
 }
+WHY["technical"] = ("Search engines and AI assistants have to be able to crawl your pages, and every visitor has to be "
+                    "able to use them. Blocked pages never get recommended, and pages people can't use don't convert.")
 WHY["analytics"] = ("Analytics is how you know who visits, where they came from and what makes them get in touch. "
                     "Without it you can't tell which marketing works, so every decision is a guess.")
 WHY["social_proof"] = ("Buyers trust other customers more than anything you say about yourself. Reviews and testimonials "
@@ -65,13 +68,36 @@ ESTIMATE = ("Scores are 100 when every finding in an area passes, 50 when they a
             "overall score gap. It shows scale, not a forecast. The monthly figure assumes the goal is for one year.")
 
 
+# The question the whole scorecard answers: the promise, not the plumbing (docs/marketing.md).
+QUESTION = "When someone needs what you do, are you the business they find, trust and choose?"
+# Find → Trust → Choose: the three things a buyer does, and the areas that decide each. An area belongs to one stage,
+# so Google Business sits under Find (it's usually the first thing a local buyer sees) even though reviews build trust.
+# Areas no stage claims fall under "Also checked", which keeps a new dimension from silently disappearing.
+STAGES = [("Find", "Can the people looking for what you do discover you?",
+           ("ai_search", "llm_reputation", "citation_gap", "google_business", "technical_marketing", "technical",
+            "meta_ads")),
+          ("Trust", "When they find you, do you look like the safe choice?",
+           ("social_proof", "practitioners", "fonts", "security")),
+          ("Choose", "Once they're considering you, do you give them a reason to get in touch?",
+           ("website", "copy", "jev_copy", "answer_coverage")),
+          ("Measure", "Can you see what's working?", ("analytics",))]
+OUTCOME = "The number we report back is new customers, not rankings or scores."
+
+ONGOING = ["We re-crawl your site and online presence regularly, so your scorecard is always current.",
+           "We track your competitors and keep you ahead of them.",
+           "We keep redesigning and improving your site so it turns more visitors into customers.",
+           "We run and refine the channels that bring you new customers, and drop what doesn't work.",
+           "We monitor how AI assistants describe and recommend you, and fix it when they get you wrong."]
+
+
 def service():
     """Who fixes it, from COMPANYSCAN_SERVICE_NAME/_PITCH/_CTA. The defaults are draft copy: set your own before sending."""
     return {"name": os.environ.get("COMPANYSCAN_SERVICE_NAME") or "Obvious Choice Systems",
             "pitch": os.environ.get("COMPANYSCAN_SERVICE_PITCH") or (
-                "You don't have to fix any of this yourself. Obvious Choice Systems does the work for you: we fix the gaps that keep "
-                "buyers and AI assistants from choosing you, in order of what they cost you, and re-scan so you can "
-                "see each score move."),
+                "You don't have to fix any of this yourself. Obvious Choice Systems gets you found, trusted and chosen, including by "
+                "the AI assistants buyers now ask first. Search, AI and your competitors keep moving, so we stay on it "
+                "with you: we fix what's costing you customers now, then keep you the one they choose, month after "
+                "month."),
             "cta": os.environ.get("COMPANYSCAN_SERVICE_CTA") or (
                 "Reply to this email to book a 30-minute walkthrough of your scorecard and a fix plan for the areas "
                 "costing you most.")}
@@ -265,6 +291,30 @@ def area_card(a):
             + f'<dl>{"".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in rows)}</dl></div></article>')
 
 
+def stages(rows):
+    """[(name, question, areas)] in Find → Trust → Choose order; areas no stage claims come last under "Also checked"."""
+    placed, out = set(), []
+    for name, question, keys in STAGES:
+        found = [a for a in rows if a["key"] in keys]
+        placed |= {a["key"] for a in found}
+        if found:
+            out.append((name, question, found))
+    rest = [a for a in rows if a["key"] not in placed]
+    return out + [("Also checked", "", rest)] if rest else out
+
+
+def stage_card(name, question, found):
+    """A stage heading (its own score and value at risk, from its areas) followed by the area cards inside it."""
+    scored = [a["score"] for a in found if a["score"] is not None]
+    mean = round(sum(scored) / len(scored)) if scored else None
+    risk = sum(a.get("at_risk") or 0 for a in found)
+    return (f'<h3 class="stage s-{band(mean)}"><span class="stage-name">{esc(name)}</span>'
+            f'<b>{esc(mean) if mean is not None else "—"}</b>'
+            + (f'<span class="stage-risk">{money(risk)} at risk</span>' if risk else "")
+            + (f'<em>{esc(question)}</em>' if question else "")
+            + "</h3>" + "".join(area_card(a) for a in found))
+
+
 def html(card, host, captured):
     offer = service()
     money_row = (f'<div class="money"><div><b>{money(card["goal"])}</b>Your growth goal</div>'
@@ -279,15 +329,19 @@ def html(card, host, captured):
     plan = "".join(f"<li>{esc(clip(p, 260))}</li>" for p in card["plan"])
     return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{esc(host)} scorecard</title>'
             f'<style>{CSS.read_text(encoding="utf-8")}</style></head><body class="designed scorecard">'
-            f'<section class="cover"><div class="eyebrow">Online presence scorecard</div><div class="cover-title">{esc(host)}</div>'
+            f'<section class="cover"><div class="eyebrow">Find · Trust · Choose</div><div class="cover-title">{esc(host)}</div>'
+            f'<p class="lede">{esc(QUESTION)}</p>'
             f'<p class="meta">Captured {esc(captured[:10])} · prepared by {esc(offer["name"])}</p><div class="overall s-{band(card["overall"])}">'
             f'<b>{esc(card["overall"]) if card["overall"] is not None else "—"}</b><span>Overall score</span></div></section>'
             f'<h2>What this is costing you</h2>{money_row}<p>{esc(overview(card, host))}</p>'
             + (f'<h4>Where you’re losing customers</h4><ol class="losses">{losses}</ol>' if losses else "")
             + (f'<div class="chips">{by_loss}</div>' if by_loss else "")
-            + f'<section class="page"><h2>By area</h2>{"".join(area_card(a) for a in card["areas"])}</section>'
-            f'<section class="fix"><h2>How {esc(offer["name"])} fixes this</h2><p>{esc(offer["pitch"])}</p>'
-            + (f'<h4>What we’ll handle first</h4><ol class="plan">{plan}</ol>' if plan else "")
+            + '<section class="page"><h2>How buyers find you, trust you and choose you</h2>'
+            + "".join(stage_card(*s) for s in stages(card["areas"])) + '</section>'
+            + f'<section class="fix"><h2>How {esc(offer["name"])} fixes this</h2><p>{esc(offer["pitch"])}</p>'
+            + (f'<h4>Get chosen: what we’ll fix first</h4><ol class="plan">{plan}</ol>' if plan else "")
+            + '<h4>Stay chosen: what you get every month</h4><ul class="ongoing">' + "".join(f"<li>{esc(o)}</li>" for o in ONGOING) + '</ul>'
+            + f'<p class="outcome">{esc(OUTCOME)}</p>'
             + f'<p class="cta">{esc(offer["cta"])}</p></section>'
             f'<p class="note">{esc(ESTIMATE)}</p></body></html>')
 

@@ -12,3 +12,4 @@ db.sqlite3
 huey.sqlite3*
 staticfiles/
 logs/
+customers/

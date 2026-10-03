@@ -189,6 +189,15 @@ tbody tr:nth-child(even) td { background: #fafbfc; }
 
 /* Customer scorecard (report/scorecard.py): what it costs, each area, and how it gets fixed. */
 .scorecard .cover { padding-top: 30mm; }
+.cover .lede { margin: 0 0 4mm; font-size: 13pt; line-height: 1.35; color: #e7e9ee; }
+/* Find → Trust → Choose heading above each group of area cards. */
+.stage { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 3mm; margin: 6mm 0 2.5mm; padding-bottom: 1.5mm;
+         border-bottom: 1.2mm solid var(--sev); color: var(--ink); }
+.stage .stage-name { font-size: 13pt; }
+.stage b { font-size: 16pt; color: var(--sev); }
+.stage .stage-risk { font-size: 8.5pt; font-weight: 400; color: var(--muted); }
+.stage em { flex-basis: 100%; margin-top: 0.8mm; font-style: normal; font-size: 9.5pt; font-weight: 400; color: #333a45; }
+.outcome { margin: 3mm 0 0; font-weight: 700; }
 .overall { display: inline-block; padding: 3mm 6mm; border-radius: 2mm; background: rgba(255, 255, 255, 0.08); border-top: 1.2mm solid var(--sev); }
 .overall b { display: block; font-size: 40pt; line-height: 1; }
 .overall span { font-size: 8.5pt; color: #c9cdd4; }
