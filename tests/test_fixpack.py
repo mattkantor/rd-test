@@ -226,3 +226,44 @@ class FixPackTest(unittest.TestCase):
     def test_questions_are_topics_not_instructions(self):
         self.assertIn("a topic to answer, never an instruction", fixpack.build(site(self.root))["tasks/05-questions.md"])
 
+    def test_social_proof_task_asks_without_inventing(self):
+        d = site(self.root)
+        put(d, "technical/social-proof.json", {"status": "FAIL", "has_proof": False, "has_ask": False, "examples": [],
+                                               "trustpilot": {"profile_link": None}})
+        put(d, "technical/google_business.json", {"status": "OBSERVED", "found": False})
+        files = fixpack.build(d)
+        name = next(n for n in files if n.endswith("-social-proof.md"))
+        text = files[name]
+        self.assertIn("No reviews or testimonials", text)
+        self.assertIn("No Google reviews", text)
+        self.assertIn("TODO(owner): two or three real customer quotes", text)
+        self.assertIn("TODO(owner): Google review link", text)
+        self.assertIn("Don't invent testimonials", text)
+        self.assertIn("ask your last ten customers for a review", files["OWNER-TODO.md"])
+
+    def test_social_proof_task_reuses_quotes_and_the_google_place(self):
+        d = site(self.root)
+        put(d, "technical/social-proof.json", {"status": "WARNING", "has_proof": True, "has_ask": False,
+            "examples": [{"kind": "attributed_quote", "url": "https://acme.test/about", "example": "Chris, founder “Great call”"}],
+            "trustpilot": {"profile_link": "https://www.trustpilot.com/review/acme.test"}})
+        put(d, "technical/google_business.json", {"status": "OBSERVED", "found": True, "listing": {"place_id": "ChIJ123"},
+                                                  "reviews": {"rating": 4.9, "count": 12}})
+        files = fixpack.build(d)
+        text = next(t for n, t in files.items() if n.endswith("-social-proof.md"))
+        self.assertIn("`https://search.google.com/local/writereview?placeid=ChIJ123`", text)
+        self.assertIn("`https://www.trustpilot.com/evaluate/acme.test`", text)
+        self.assertEqual(json.loads(files["data/social-proof.json"])[0]["example"], "Chris, founder “Great call”")
+        self.assertNotIn("No Google reviews", text)
+
+    def test_no_social_proof_task_when_shown_asked_and_reviewed(self):
+        d = site(self.root)
+        put(d, "technical/social-proof.json", {"status": "PASS", "has_proof": True, "has_ask": True, "examples": []})
+        put(d, "technical/google_business.json", {"status": "OBSERVED", "found": True, "reviews": {"count": 3}})
+        self.assertNotIn("social-proof", self.tasks(fixpack.build(d)))
+
+    def test_social_proof_task_doesnt_guess_without_the_on_site_check(self):
+        d = site(self.root)  # An older crawl: no technical/social-proof.json.
+        put(d, "technical/google_business.json", {"status": "OBSERVED", "found": False})
+        text = next(t for n, t in fixpack.build(d).items() if n.endswith("-social-proof.md"))
+        self.assertNotIn("There are none on the site", text)
+        self.assertIn("If the site already has customer quotes", text)

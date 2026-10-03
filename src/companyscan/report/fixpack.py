@@ -234,6 +234,53 @@ def accessibility(run):
                 ["Don't hide content from screen readers to silence a check."], rows or None, needs_evidence=True)
 
 
+def no_google_reviews(run):
+    """Why Google shows no reviews, or None (none missing, or google_business didn't run)."""
+    g = run.tech("google_business")
+    if g is None:
+        return None
+    count = obj(g.get("reviews")).get("count")
+    if not g.get("found"):
+        return "no Google Business Profile was found"
+    return None if isinstance(count, (int, float)) and count > 0 else "the Google listing has no reviews"
+
+
+def social_proof(run):
+    sp, google = run.tech("social-proof"), no_google_reviews(run)
+    wrong = []
+    if sp is not None and not sp.get("has_proof"):
+        wrong.append("- No reviews or testimonials are shown anywhere on the site.")
+    if sp is not None and not sp.get("has_ask"):
+        wrong.append("- Nothing asks customers for a review, a testimonial or a referral.")
+    if google:
+        wrong.append(f"- No Google reviews: {google}.")
+    quotes = [{"url": clean(e.get("url")), "example": clean(e.get("example"))}
+              for e in items(obj(sp).get("examples")) if e.get("kind") == "attributed_quote"]
+    place = obj(obj(run.tech("google_business")).get("listing")).get("place_id")
+    profile = str(obj(obj(sp).get("trustpilot")).get("profile_link") or "")
+    tp_domain = profile.rstrip("/").rsplit("/review/", 1)[-1] if "/review/" in profile else ""
+    do = ["Add a short testimonials section to the homepage and to the main services or pricing page. "
+          + ("Use the attributed quotes already on the site (`data/social-proof.json`), word for word with their attribution."
+             if quotes else "There are none on the site: write `TODO(owner): two or three real customer quotes with "
+                            "name and role` there and add it to OWNER-TODO.md." if sp is not None else
+             "If the site already has customer quotes, use them word for word with their attribution; otherwise write "
+             "`TODO(owner): two or three real customer quotes with name and role` and add it to OWNER-TODO.md."),
+          "Add a \"Leave us a Google review\" link to the footer and the contact page: "
+          + (f"`https://search.google.com/local/writereview?placeid={clean(place)}`." if place else
+             "write `TODO(owner): Google review link (Google Business Profile → Ask for reviews)` and add it to OWNER-TODO.md."),
+          "Add a referral prompt (for example \"Know someone who'd benefit? Introduce us.\") and a \"Share your "
+          "experience\" link on the contact page and any thank-you page."]
+    if tp_domain:
+        do.insert(2, f"Link \"Review us on Trustpilot\" to `https://www.trustpilot.com/evaluate/{clean(tp_domain)}`.")
+    return task("social-proof", "Show and ask for social proof", "social_proof", run.findings(["social_proof"]), wrong, do,
+                ["The homepage and the main services or pricing page each show at least one real, attributed testimonial, "
+                 "or a TODO(owner).",
+                 "A review link and a referral or share-your-experience prompt appear in the footer or on the contact page."],
+                ["Don't invent testimonials, names, roles, ratings or review counts.",
+                 "Don't add `Review` or `AggregateRating` JSON-LD unless the reviews are real and shown on that page."],
+                quotes or None)
+
+
 def questions(run):
     ac = run.tech("answer_coverage")
     rows = [{"question": clean(q.get("question")), "coverage": clean(q.get("coverage")), "best_url": clean(q.get("best_url")),
@@ -348,7 +395,8 @@ def practitioners(run):
                 ["Don't invent credentials, degrees or employers."], rows or None, needs_evidence=True)
 
 
-BUILDERS = (analytics, security, seo, structured_data, social, accessibility, questions, slop, persuasion, practitioners)
+BUILDERS = (analytics, security, seo, structured_data, social, accessibility, social_proof, questions, slop, persuasion,
+            practitioners)
 
 
 def recommendations(analysis):
@@ -438,6 +486,10 @@ def owner(run, recs):
         for f in run.findings([key]):
             off.append(f"- **{label}**: {code(f.get('id'))} {code(f.get('title'))}")
             off += [f"  - Recommended: {code(text)}" for text, fixes in recs if str(f.get("id")) in fixes]
+    google = no_google_reviews(run)
+    if google:
+        off.append(f"- **Google Business Profile**: {google}. Claim or create the listing, then ask your last ten "
+                   "customers for a review.")
     return "\n".join(lines + (off or ["Nothing from the report."])) + "\n"
 
 
