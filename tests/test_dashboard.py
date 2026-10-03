@@ -315,7 +315,7 @@ class LoadTest(unittest.TestCase):
         self.assertEqual(tile["level"], "critical")
         texts = [(a["level"], a["text"]) for a in m["attention"]]
         self.assertIn(("serious", "No reviews or testimonials on the site, and no way to leave one"), texts)
-        self.assertIn(("serious", "No Google Business Profile: buyers who check Google see no reviews"), texts)
+        self.assertIn(("serious", "No Google listing matched this site: buyers who check Google may see no reviews"), texts)
         write(self.bundle, "technical/google_business.json", {"status": "OBSERVED", "found": True, "reviews": {"rating": 4.8, "count": 84}})
         self.assertIn("Google 4.8★ (84)", {t["title"]: t for t in load(self.bundle)["tiles"]}["Social proof"]["sub"])
 

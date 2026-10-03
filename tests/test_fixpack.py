@@ -267,3 +267,23 @@ class FixPackTest(unittest.TestCase):
         text = next(t for n, t in fixpack.build(d).items() if n.endswith("-social-proof.md"))
         self.assertNotIn("There are none on the site", text)
         self.assertIn("If the site already has customer quotes", text)
+
+    def test_social_proof_quotes_are_checked_before_reuse(self):
+        d = site(self.root)
+        put(d, "technical/social-proof.json", {"status": "WARNING", "has_proof": True, "has_ask": False,
+            "signals": {"review_widget": 1}, "examples": [{"kind": "review_widget", "url": "https://acme.test/", "example": "Elfsight"}]})
+        text = next(t for n, t in fixpack.build(d).items() if n.endswith("-social-proof.md"))
+        self.assertNotIn("There are none on the site", text)  # Proof exists, just not as quotes we extracted.
+        put(d, "technical/social-proof.json", {"status": "WARNING", "has_proof": True, "has_ask": False, "signals": {"attributed_quote": 1},
+            "examples": [{"kind": "attributed_quote", "url": "https://acme.test/about", "example": "Chris, founder “Great call”"}]})
+        text = next(t for n, t in fixpack.build(d).items() if n.endswith("-social-proof.md"))
+        self.assertIn("confirm on that page that it is a customer testimonial", text)
+        self.assertIn("copy the name and role exactly as the page shows them", text)
+
+    def test_unmatched_google_listing_isnt_called_missing(self):
+        d = site(self.root)
+        put(d, "technical/google_business.json", {"status": "OBSERVED", "found": False})
+        files = fixpack.build(d)
+        self.assertIn("No Google listing matched this site", files["OWNER-TODO.md"])
+        self.assertIn("Search for an existing listing and claim it before creating one", files["OWNER-TODO.md"])
+

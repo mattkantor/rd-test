@@ -241,7 +241,7 @@ def no_google_reviews(run):
         return None
     count = obj(g.get("reviews")).get("count")
     if not g.get("found"):
-        return "no Google Business Profile was found"
+        return "no Google listing matched this site"  # Not proof there's none: the lookup is one name search.
     return None if isinstance(count, (int, float)) and count > 0 else "the Google listing has no reviews"
 
 
@@ -260,9 +260,11 @@ def social_proof(run):
     profile = str(obj(obj(sp).get("trustpilot")).get("profile_link") or "")
     tp_domain = profile.rstrip("/").rsplit("/review/", 1)[-1] if "/review/" in profile else ""
     do = ["Add a short testimonials section to the homepage and to the main services or pricing page. "
-          + ("Use the attributed quotes already on the site (`data/social-proof.json`), word for word with their attribution."
-             if quotes else "There are none on the site: write `TODO(owner): two or three real customer quotes with "
-                            "name and role` there and add it to OWNER-TODO.md." if sp is not None else
+          + ("Start from the quotes in `data/social-proof.json`: for each, open its page, confirm on that page that it "
+             "is a customer testimonial (skip it if not), then copy the quote word for word and copy the name and role "
+             "exactly as the page shows them." if quotes else
+             "There are none on the site: write `TODO(owner): two or three real customer quotes with name and role` "
+             "there and add it to OWNER-TODO.md." if sp is not None and not sp.get("has_proof") else
              "If the site already has customer quotes, use them word for word with their attribution; otherwise write "
              "`TODO(owner): two or three real customer quotes with name and role` and add it to OWNER-TODO.md."),
           "Add a \"Leave us a Google review\" link to the footer and the contact page: "
@@ -488,7 +490,8 @@ def owner(run, recs):
             off += [f"  - Recommended: {code(text)}" for text, fixes in recs if str(f.get("id")) in fixes]
     google = no_google_reviews(run)
     if google:
-        off.append(f"- **Google Business Profile**: {google}. Claim or create the listing, then ask your last ten "
+        off.append(f"- **Google Business Profile**: {google[0].upper() + google[1:]}. Search for an existing listing and claim "
+                   "it before creating one, then ask your last ten "
                    "customers for a review.")
     return "\n".join(lines + (off or ["Nothing from the report."])) + "\n"
 

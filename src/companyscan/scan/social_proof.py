@@ -2,6 +2,7 @@
 testimonial or a referral. Read from the captured pages only, with no requests. Heuristic (INFERRED): it says what
 the HTML shows, never that the reviews are genuine or current."""
 import re
+from urllib.parse import urlsplit
 
 EXAMPLE_MAX, EXAMPLES = 200, 10
 PROOF = {"json_ld_reviews", "testimonial_section", "attributed_quote", "review_widget", "rating_text"}
@@ -9,9 +10,10 @@ ASK = {"review_link", "testimonial_ask", "referral_ask"}
 SECTION = re.compile(r"testimonial|what (?:our )?(?:clients|customers|people) (?:say|are saying)|^reviews?$|kind words|"
                      r"success stories|in their words|client stories|customer stories", re.I)
 NEGATED = re.compile(r"\b(?:not|no|never|without)\b", re.I)  # "Investigations, not testimonials."
-QUOTE = re.compile(r"[“\"]([^”\"]{40,})[”\"]")
+QUOTE = re.compile(r"[“\"]([^”\"]{40,1000})[”\"]")  # Bounded, so a long unclosed quote can't backtrack for minutes.
+LINE_MAX = 5000  # Longer lines (minified text, data dumps) aren't searched for quotes.
 # "Chris, SaaS founder" or "— Jane Doe": a capitalised name of up to four words, optionally a role after a comma.
-NAME = re.compile(r"[—–-]?\s*[A-Z][\w.'’-]+(?: [A-Z][\w.'’-]+){0,3}(?:\s*,\s*[^,\n“”\"]{2,40})?")
+NAME = re.compile(r"[—–-]?\s*[A-Z][\w.'’-]+(?: [A-Z][\w.'’-]+){0,3}(?:\s*,\s*[^,\n“”\"]{3,40})?")
 WIDGETS = [("Trustpilot", r"widget\.trustpilot\.com"), ("Elfsight", r"elfsight(?:cdn)?\.com"), ("Birdeye", r"birdeye\.com"),
            ("Podium", r"podium\.com"), ("Yotpo", r"yotpo\.com"), ("Reviews.io", r"reviews\.(?:io|co\.uk)"),
            ("Judge.me", r"judge\.me"), ("Stamped", r"stamped\.io"), ("Okendo", r"okendo\.io"),
@@ -24,7 +26,9 @@ REVIEW_HREF = re.compile(r"search\.google\.com/local/writereview|g\.page/r/[^/]+
 REVIEW_TEXT = re.compile(r"\b(?:leave|write|post|submit|add)\s+(?:us\s+)?a\s+review\b|\breview us\b|\brate us\b", re.I)
 TESTIMONIAL_ASK = re.compile(r"share your (?:experience|story|feedback)|submit (?:a |your )?testimonial|tell us how we did|"
                              r"leave (?:us )?(?:a |your )?(?:testimonial|feedback)", re.I)
-REFERRAL = re.compile(r"\brefer (?:a |your )?(?:friend|colleague|client|business)\b|\breferral(?:s| program| scheme)?\b", re.I)
+# An ask, not the word: "No referral needed" or "a federal referral" in prose is not one.
+REFERRAL = re.compile(r"\brefer (?:a |your )?(?:friend|colleague|client|business|someone)\b|"
+                      r"\breferral (?:program|programme|reward|bonus|scheme)s?\b|\bintroduce us\b", re.I)
 PROFILES = [("Google", r"google\.[a-z.]+/maps/place|maps\.app\.goo\.gl|g\.page/(?!r/)"), ("Trustpilot", r"trustpilot\.com/review/"),
             ("Yelp", r"yelp\.[a-z.]+/biz/"), ("G2", r"g2\.com/products/[^/]+/reviews?$"), ("Capterra", r"capterra\.com/p/"),
             ("Clutch", r"clutch\.co/profile/[^/]+$")]
@@ -45,10 +49,15 @@ def rows(value):
 
 def attributed(lines, i, match, labels=frozenset()):
     """A quote counts as a testimonial when a short name-like line sits right before or after it, on its line or the
-    neighbouring one. labels: the page's link texts; a menu item ("Reviews") is never an attribution."""
+    neighbouring one. labels: the page's link and heading texts; a menu item ("Reviews") or a Title Case heading is
+    never an attribution. A quote ending in a comma, or a neighbour with digits or ending in ":", reads as a citation
+    or a lead-in ("J. Chem. Eng., 86: 622", "Return to the ad:"), not a customer."""
+    if match.group(1).rstrip().endswith(","):
+        return False
     line = lines[i]
     near = [line[:match.start()], line[match.end():]] + lines[max(i - 1, 0):i] + lines[i + 1:i + 2]
-    return any(0 < len(c.strip()) <= 60 and c.strip().lower() not in labels and NAME.fullmatch(c.strip()) for c in near)
+    return any(0 < len(c.strip()) <= 60 and c.strip().lower() not in labels and not re.search(r"\d|:$", c.strip())
+               and NAME.fullmatch(c.strip()) for c in near)
 
 
 def signals(p):
@@ -67,8 +76,8 @@ def signals(p):
     if section or (isinstance(p.get("classification"), dict) and p["classification"].get("label") == "testimonial"):
         found.append(("testimonial_section", section or "testimonial page"))
     for i, line in enumerate(lines):
-        match = QUOTE.search(line)
-        if match and attributed(lines, i, match, labels):
+        match = QUOTE.search(line) if len(line) <= LINE_MAX else None
+        if match and attributed(lines, i, match, labels | {h.strip().lower() for h in heads}):
             found.append(("attributed_quote", line))
             break
     for q in rows(p.get("quotation_candidates")):
@@ -91,11 +100,17 @@ def signals(p):
             found.append(("review_link", label or url))
         if TESTIMONIAL_ASK.search(label):
             found.append(("testimonial_ask", label))
-    asks = [label for label in (str(l.get("text") or "") for l in links)] + lines
-    referral = next((s for s in asks if REFERRAL.search(s)), None)
+    asks = [str(l.get("text") or "") for l in links] + heads + lines  # REFERRAL is strict enough for prose.
+    referral = next((s for s in asks if REFERRAL.search(s) and not NEGATED.search(s)), None)
     if referral:
         found.append(("referral_ask", referral))
     return found
+
+
+def own_trustpilot(url, hosts):
+    """Whether a trustpilot.com/review|evaluate/<domain> link is about one of the crawled hosts."""
+    found = re.search(r"trustpilot\.com/(?:review|evaluate)/([^/?#]+)", url, re.I)
+    return bool(found) and found.group(1).lower().removeprefix("www.") in hosts
 
 
 def obj_types(p):
@@ -106,6 +121,7 @@ def obj_types(p):
 def check(pages):
     """technical/social-proof.json: what proof the site shows and how it asks for more."""
     pages = [p for p in pages if isinstance(p, dict) and isinstance(p.get("url"), str)]
+    hosts = {(urlsplit(p["url"]).hostname or "").removeprefix("www.") for p in pages}
     counts, examples, proof_pages, profiles = {}, [], [], {}
     trustpilot = {"widget": False, "profile_link": None, "review_link": None, "score_text": None}
     for p in pages:
@@ -125,6 +141,8 @@ def check(pages):
                 trustpilot["score_text"] = clip(example)
         for link in rows(p.get("links")):
             url = str(link.get("url") or "")
+            if "trustpilot.com/" in url.lower() and not own_trustpilot(url, hosts):
+                continue  # A link to another business's Trustpilot page isn't this site's profile.
             for name, pattern in PROFILES:
                 if re.search(pattern, url, re.I):
                     profiles.setdefault(name, url)

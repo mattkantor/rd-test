@@ -811,7 +811,7 @@ def attention(model, raw):
     t = raw["google_business"]
     if isinstance(t, dict) and t.get("status") == "OBSERVED":
         if t.get("found") is False:
-            add("serious", "No Google Business Profile: buyers who check Google see no reviews", "#listing")
+            add("serious", "No Google listing matched this site: buyers who check Google may see no reviews", "#listing")
         elif not num(as_dict(t.get("reviews")).get("count")):
             add("serious", "The Google listing has no reviews", "#listing")
         for field in as_list(t.get("mismatches")):

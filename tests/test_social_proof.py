@@ -90,3 +90,34 @@ class SocialProofReportTest(unittest.TestCase):
         from companyscan.report import scorecard
         self.assertIn("Buyers trust other customers", scorecard.WHY["social_proof"])
         self.assertEqual(scorecard.LABELS["social_proof"], "Social proof")
+
+
+class SocialProofPrecisionTest(unittest.TestCase):
+    def test_referral_in_prose_is_not_an_ask(self):
+        prose = social_proof.check([page(visible_text="Lenders can't market without a federal referral, so we document every step.\n"
+                                                      "No referral needed.")])
+        self.assertNotIn("referral_ask", prose["signals"])
+        ask = social_proof.check([page(links=[{"url": "https://acme.test/refer", "text": "Refer a friend"}])])
+        self.assertIn("referral_ask", ask["signals"])
+        program = social_proof.check([page(headings=[{"level": 2, "text": "Our referral program"}])])
+        self.assertIn("referral_ask", program["signals"])
+
+    def test_headings_and_citations_are_not_attributions(self):
+        quote = "High-yield savings with no fees, no minimums and a rate that beats the big banks every single month."
+        heading = social_proof.check([page(headings=[{"level": 2, "text": "The Same Ad, Four Different Reviews"}],
+                                           visible_text=f"The Same Ad, Four Different Reviews\nReturn to the ad: “{quote}”")])
+        self.assertNotIn("attributed_quote", heading["signals"])
+        citation = social_proof.check([page(visible_text=f"Khazam, O. “{quote},” J. Chem. Eng., 86: 622-634.")])
+        self.assertNotIn("attributed_quote", citation["signals"])
+
+    def test_huge_unclosed_quote_line_is_fast(self):
+        import time
+        started = time.monotonic()
+        social_proof.check([page(visible_text="“" * 40000 + "x" * 40000)])
+        self.assertLess(time.monotonic() - started, 1)
+
+    def test_only_this_sites_trustpilot_profile_counts(self):
+        other = social_proof.check([page(links=[{"url": "https://www.trustpilot.com/review/competitor.com", "text": "Them"}])])
+        self.assertIsNone(other["trustpilot"]["profile_link"])
+        own = social_proof.check([page(url="https://www.acme.test/", links=[{"url": "https://uk.trustpilot.com/review/acme.test", "text": "Us"}])])
+        self.assertEqual(own["trustpilot"]["profile_link"], "https://uk.trustpilot.com/review/acme.test")
