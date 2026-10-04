@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>{{ name }} · Obvious Choice Systems</title>
+  <link rel="icon" type="image/svg+xml" href="{{ static('mark.svg') }}">
+  <link rel="stylesheet" href="{{ static('app.css') }}">
+  <link rel="stylesheet" href="{{ static('pangram.css') }}">
+  <style>
+    /* Customer page: the scorecard's promise, score and gaps, with the brand's deep-green panels and orange accent. */
+    .pub main { max-width: 880px; }
+    .pub .brandbar nav { display: none; }
+    .pub .eyebrow { margin: 0 0 6px; font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--pg-orange); }
+    .pub h1 { font-size: 44px; margin-bottom: 8px; }
+    .pub .lede { margin: 0 0 24px; font: 400 22px/1.3 "Instrument Serif", Georgia, serif; color: var(--pg-ink-2); max-width: 640px; }
+    .panel { background: var(--pg-green-dark); color: #f8f7f5; border-radius: 24px; padding: 28px 32px; display: grid;
+             grid-template-columns: auto 1fr; gap: 24px 40px; align-items: center; }
+    .panel .score { font: 400 96px/1 "Instrument Serif", Georgia, serif; }
+    .panel .score small { display: inline; font: 500 16px "IBM Plex Sans", sans-serif; color: var(--pg-mint); margin-left: 6px; }
+    .panel .label { color: var(--pg-mint); }
+    .panel p { margin: 0; color: #e7e9ee; }
+    .panel .found { font-size: 20px; font-weight: 600; color: #fff; }
+    .stages { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 16px 0 32px; }
+    .stage { background: var(--pg-surface); border: 1px solid var(--pg-line); border-top: 5px solid var(--neutral); border-radius: 20px; padding: 16px 18px; }
+    .stage .value { font: 400 40px/1 "Instrument Serif", Georgia, serif; margin: 6px 0 8px; }
+    .stage .sub { margin: 0; font-size: 13px; color: var(--pg-ink-2); }
+    .s-PASS { border-top-color: #118d57; } .s-WARNING { border-top-color: #ffab00; } .s-FAIL { border-top-color: #d6331c; }
+    .pub h2 { font: 400 30px/1.1 "Instrument Serif", Georgia, serif; margin: 0 0 4px; }
+    .pub h2 + p { margin: 0 0 16px; color: var(--pg-ink-2); }
+    .gaps { list-style: none; margin: 0 0 32px; padding: 0; display: grid; gap: 12px; }
+    .gap { display: grid; grid-template-columns: 72px 1fr; gap: 18px; background: var(--pg-surface); border: 1px solid var(--pg-line);
+           border-left: 5px solid var(--neutral); border-radius: 20px; padding: 18px 20px; }
+    .gap .value { font: 400 40px/1 "Instrument Serif", Georgia, serif; }
+    .gap .risk { display: block; font-size: 12px; font-weight: 600; color: #c4321c; margin-top: 4px; }
+    .gap h3 { margin: 0 0 4px; font-size: 18px; }
+    .gap p { margin: 0 0 6px; font-size: 14px; }
+    .gap .fix { margin: 0; padding-left: 18px; font-size: 14px; color: var(--pg-ink-2); }
+    .gap .fix li::marker { color: var(--pg-orange); }
+    .working { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 32px; padding: 0; list-style: none; }
+    .working li { display: inline-flex; align-items: center; gap: 8px; background: var(--pg-mint); color: #0f3d2a; border-radius: 999px; padding: 6px 14px 6px 10px; font-size: 14px; font-weight: 500; }
+    .working b { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #118d57; color: #fff; font-size: 12px; }
+    .money { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 0 0 32px; }
+    .money div { background: var(--pg-surface); border: 1px solid var(--pg-line); border-radius: 20px; padding: 16px 18px; }
+    .money b { display: block; font: 400 36px/1.1 "Instrument Serif", Georgia, serif; margin-bottom: 4px; }
+    .money span { font-size: 13px; color: var(--pg-ink-2); }
+    .cta { background: var(--pg-green-dark); color: #f8f7f5; border-radius: 24px; padding: 32px; margin: 0 0 24px; }
+    .cta h2 { color: #fff; }
+    .pub .cta p { color: #f8f7f5; max-width: 560px; margin: 0 0 20px; }  /* Beats .pub h2 + p. */
+    .cta a { display: inline-block; background: var(--pg-orange); color: #fff; font-weight: 600; padding: 12px 24px; border-radius: 999px; text-decoration: none; }
+    .cta a:hover { background: #ff7a2e; }
+    .fine { font-size: 12px; color: var(--pg-ink-3); margin: 0; }
+    @media (max-width: 600px) { .panel { grid-template-columns: 1fr; } .panel .score { font-size: 72px; } .pub h1 { font-size: 34px; } }
+  </style>
+</head>
+<body class="pub">
+{% include "_header.html" %}
+<main>
+  <p class="eyebrow">Find · Trust · Choose</p>
+  <h1>{{ name }}</h1>
+  <p class="lede">{{ question }}</p>
+
+  <section class="panel" aria-label="Overall score">
+    <div><p class="label">Overall score</p><div class="score">{{ c.overall if c.overall is not none else "—" }}<small>/ 100</small></div></div>
+    <div>
+      <p class="found">We found {{ improve | length }} area{{ "" if improve | length == 1 else "s" }} where more of the right customers could find, trust or choose you.</p>
+      <p>Checked {{ c.areas | length }} areas of your online presence · {{ run.created_at | local_time }}</p>
+    </div>
+  </section>
+
+  <div class="stages">
+    {% for stage, q, found in stages %}
+    {% set scored = found | map(attribute="score") | reject("none") | list %}
+    {% set mean = (scored | sum / scored | length) | round | int if scored else none %}
+    <div class="stage s-{{ band(mean) }}"><p class="label">{{ stage }}</p><div class="value">{{ mean if mean is not none else "—" }}</div><p class="sub">{{ q }}</p></div>
+    {% endfor %}
+  </div>
+
+  {% if c.at_risk is not none %}
+  <h2>What this is costing you</h2>
+  <p>An estimate from your growth goal and the gaps above, not a forecast.</p>
+  <div class="money">
+    <div><b>{{ money(c.goal) }}</b><span>Your growth goal</span></div>
+    <div><b style="color:#c4321c">{{ money(c.at_risk) }}</b><span>Estimated at risk</span></div>
+    <div><b style="color:#b76e00">{{ money(c.monthly) }}</b><span>Each month it waits</span></div>
+  </div>
+  {% endif %}
+
+  {% if improve %}
+  <h2>Where to improve</h2>
+  <p>The areas costing you customers, biggest gap first.</p>
+  <ol class="gaps">
+    {% for a in improve %}
+    <li class="gap s-{{ band(a.score) }}">
+      <div><div class="value">{{ a.score }}</div>{% if a.at_risk %}<span class="risk">{{ money(a.at_risk) }} at risk</span>{% endif %}</div>
+      <div>
+        <h3>{{ a.label }}</h3>
+        <p>{{ why.get(a.key, why_default) }}</p>
+        {% if a.loss and a.loss.headline and not a.protects %}<p><strong>{{ a.loss.headline }}</strong></p>{% endif %}
+        {% if a.fixes %}<ul class="fix">{% for f in a.fixes %}<li>{{ f }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ol>
+  {% endif %}
+
+  {% if working %}
+  <h2>What's working</h2>
+  <p>Areas already helping buyers choose you.</p>
+  <ul class="working">{% for a in working %}<li><b>✓</b>{{ a.label }} · {{ a.score }}</li>{% endfor %}</ul>
+  {% endif %}
+
+  <section class="cta">
+    <h2>Want more customers from this?</h2>
+    <p>{{ service.pitch }}</p>
+    <a href="#">Talk to us about growing your sales</a>
+  </section>
+  <p class="fine">Scores are estimates derived from what we could observe on your site and online presence on {{ run.created_at | local_time }}; they show scale, not proof.</p>
+</main>
+</body>
+</html>

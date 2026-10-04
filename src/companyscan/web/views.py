@@ -13,6 +13,8 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from ..dimensions import DIMENSIONS
+from ..report import scorecard as card
+from ..report.analyze import hidden, latest, load as load_json
 from ..report.fixpack import zipped
 from ..report.scorecard import render_scorecard
 from ..scan.crawler import normalize, origin
@@ -148,6 +150,26 @@ def site_page(request, pk):
     if not run:
         raise Http404
     return render_run(request, run.name, on_site=True)
+
+
+def public_site(request, public_id):
+    """The customer's own page: a cut-down scorecard for the site's latest reported crawl, at an unguessable URL so it
+    needs no login. Scores and copy come from scorecard.build; the template escapes everything (report text is untrusted)."""
+    site = get_object_or_404(Site, public_id=public_id)
+    run = next((r for r in site.runs.all() if bundle_path(r.name) and latest(bundle_path(r.name), "analysis.json")), None)
+    if not run:
+        raise Http404
+    bundle = bundle_path(run.name)
+    analysis = load_json(latest(bundle, "analysis.json"))
+    if not isinstance(analysis, dict):
+        raise Http404
+    data = card.build(analysis, site.customer_ltv, site.target_customers, hidden(bundle), load_json(bundle / "technical/measurement.json"))
+    scored = [a for a in data["areas"] if a["score"] is not None]
+    improve = sorted((a for a in scored if a["score"] < 80), key=lambda a: a["score"])
+    return render(request, "public_site.html", {
+        "site": site, "name": site.business_name or site.host, "run": run, "c": data, "stages": card.stages(data["areas"]),
+        "improve": improve, "working": [a for a in scored if a["score"] >= 80], "why": card.WHY, "why_default": card.WHY_DEFAULT,
+        "band": card.band, "money": card.money, "question": card.QUESTION, "service": card.service()})
 
 
 # The origin is the site's identity (runs attach to it by URL), so it is set once, by the first crawl, never edited.

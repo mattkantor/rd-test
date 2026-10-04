@@ -159,7 +159,8 @@
         {% if m.report.pdf %} · <a href="{{ m.report.pdf | file_url }}"><b>PDF</b></a>{% endif %}
         {% if m.report.analysis %} · <a href="/run/{{ bundle.name | urlencode }}/scorecard.pdf"><b>Customer scorecard</b></a>{% endif %}
         {% if m.report.analysis %} · <a href="/run/{{ bundle.name | urlencode }}/fixpack.zip"><b>Fix pack (.zip)</b></a>{% endif %}
-        {% if m.report.analysis %} · <a href="{{ m.report.analysis | file_url }}">analysis.json</a>{% endif %}</p>
+        {% if m.report.analysis %} · <a href="{{ m.report.analysis | file_url }}">analysis.json</a>{% endif %}
+        {% if m.report.analysis and site %} · <a href="/sites/{{ site.public_id }}"><b>Customer page</b></a>{% endif %}</p>
     {% else %}
       <p class="muted">No report yet.</p>
       <form method="post" action="/report">{{ csrf_input }}<input type="hidden" name="dir" value="{{ bundle.name }}"><input type="hidden" name="return_to" value="{{ 'site' if on_site else 'dashboard' }}"><button data-busy {% if running %}disabled{% endif %}>Generate report</button></form>

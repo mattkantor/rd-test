@@ -13,6 +13,7 @@ urlpatterns = [
     path("site/<int:pk>/edit", views.site_edit, name="site_edit"),
     path("site/<int:pk>/questions", views.new_questions),
     path("site/<int:pk>/job", views.site_job),
+    path("sites/<uuid:public_id>", views.public_site, name="public_site"),
     path("run/<str:name>", views.run_dashboard, name="dashboard"),
     path("run/<str:name>/job", views.job_status),
     path("run/<str:name>/scorecard.pdf", views.scorecard, name="scorecard"),

@@ -201,6 +201,35 @@ class WebTests(WebCase):
         self.assertContains(self.client.get("/run/acme"), "/run/acme/scorecard.pdf")
         self.assertEqual(self.client.get("/run/nope/scorecard.pdf").status_code, 404)
 
+    def test_customer_page_needs_no_login_and_shows_the_gaps(self):
+        d = bundle(self.root, "acme", "https://acme.test/", "2026-01-01T00:00:00+00:00")
+        self.client.get("/")
+        site = Site.objects.get()
+        self.assertEqual(len(str(site.public_id)), 36)  # A UUID, set on creation.
+        self.assertNotContains(self.client.get("/run/acme"), "Customer page")  # No report yet.
+        self.assertEqual(self.client.get(f"/sites/{site.public_id}").status_code, 404)
+        (d / "analysis/analysis.json").write_text(json.dumps({"findings": [
+            {"id": "F1", "title": "No pricing page", "severity": "FAIL", "business_impact": {"headline": "<b>Buyers</b> leave"}}],
+            "google_business": {"verdict": "PASS", "summary": "Listing is right."},
+            "recommendations": [{"summary": "Publish a pricing page", "rationale_findings": ["F1"]}]}))
+        (d / "analysis/report.md").write_text("# Acme\n")
+        site.business_name, site.customer_ltv, site.target_customers = "Acme <Co>", 1000, 4
+        site.save()
+        self.assertContains(self.client.get("/run/acme"), f'href="/sites/{site.public_id}"')
+        self.client.logout()
+        page = self.client.get(f"/sites/{site.public_id}")
+        self.assertContains(page, "<h1>Acme &lt;Co&gt;</h1>")
+        self.assertContains(page, "We found 1 area where")
+        self.assertContains(page, "Where to improve")
+        self.assertContains(page, "Publish a pricing page")
+        self.assertContains(page, "&lt;b&gt;Buyers&lt;/b&gt; leave")  # Report text is escaped.
+        self.assertContains(page, "Google listing · 100")
+        self.assertContains(page, "$2,000")  # 1000 x 4 x a 50-point gap.
+        self.assertContains(page, '<a href="#">Talk to us')
+        self.assertNotContains(page, "/files/")  # No bundle internals.
+        self.assertEqual(self.client.get("/sites/00000000-0000-0000-0000-000000000000").status_code, 404)
+        self.assertEqual(self.client.get(f"/site/{site.pk}").status_code, 302)  # Staff pages still need a login.
+
     def test_bad_url_busy_site_and_unknown_bundle(self):
         response = self.client.post("/crawl", {"url": "ftp://acme.test"})
         self.assertIn("msg=", response["location"])

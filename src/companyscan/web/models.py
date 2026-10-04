@@ -1,6 +1,7 @@
 """Sites, crawl runs and jobs. Bundles on disk stay the evidence; Run is an index of them, rebuilt by sync()."""
 import json
 import logging
+import uuid
 from datetime import datetime
 from urllib.parse import urlsplit
 
@@ -28,6 +29,8 @@ def validate_urls(text):
 
 class Site(models.Model):
     origin = models.CharField(max_length=500, unique=True)
+    # The customer-facing scorecard lives at /sites/<public_id>: unguessable, so the page needs no login.
+    public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     business_name = models.CharField(max_length=255, blank=True)
     icp = models.TextField("ICP", blank=True)
     # Only for a local business: helps the AI reputation check find it and asks buyer questions for that place.
