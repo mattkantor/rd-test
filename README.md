@@ -190,6 +190,8 @@ On a server, run `python manage.py collectstatic` (WhiteNoise serves the files) 
 
 ### Deploy (DigitalOcean droplet, Docker Compose)
 
+The step-by-step plan, with a pre-flight checklist, checks, operations and troubleshooting, is [docs/deploy.md](docs/deploy.md).
+
 `docker-compose.yml` runs everything on one host: **Postgres**, the **web** app (gunicorn), the Huey **worker**, **Caddy** (HTTPS from Let's Encrypt for your domain) and a nightly **backup** (`pg_dump` to `./backups`, 14 days kept). Web and worker share one image (`Dockerfile`: Python, pandoc, Chromium) and the `data` volume, which holds the evidence bundles and the job queue; they must stay on one host.
 
 1. Create an Ubuntu 24.04 droplet (2 GB RAM or more; Chromium and a crawl together need it) and point your domain's DNS A record at it.
