@@ -14,3 +14,5 @@ staticfiles/
 logs/
 customers/
 backups/
+
+.DS_Store
