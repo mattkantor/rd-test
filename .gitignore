@@ -16,3 +16,6 @@ customers/
 backups/
 
 .DS_Store
+
+# Google OAuth client downloads contain the client secret
+client_secret*.json
