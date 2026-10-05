@@ -19,3 +19,6 @@ backups/
 
 # Google OAuth client downloads contain the client secret
 client_secret*.json
+
+# Google OAuth client file (keep out of git)
+oauth.json
