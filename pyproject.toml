@@ -11,6 +11,7 @@ dependencies = []
 
 [project.optional-dependencies]
 llm = ["langchain", "langchain-openai"]
+dev = ["ruff"]
 web = ["django>=5.2", "huey>=2.5", "psycopg[binary]>=3.2", "whitenoise>=6", "jinja2>=3.1", "langchain", "langchain-openai"]
 
 [project.scripts]
@@ -21,3 +22,12 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 companyscan = ["views/templates/*.html", "views/static/*", "views/report/*", "skills/*/*.md", "skills/*/references/*.md"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 160
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "B"]
+# House style: short lambdas and `l` loop names are idiomatic here; zips pair lists of equal length by construction.
+ignore = ["E731", "E741", "B905"]

@@ -1,7 +1,6 @@
 """Technical observations, never claims about actual AI visibility."""
 from collections import Counter
 
-from .crawler import origin
 from .measurement import summarize
 from .schema import site_entities
 from .social_proof import check as social_proof

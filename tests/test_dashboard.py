@@ -5,7 +5,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from companyscan.web.dashboard import MISSING, UNREADABLE, describe, link, load, read, since_last, spark, table
+from test_web import WebCase
+
+from companyscan.web.dashboard import MISSING, UNREADABLE, link, load, read, since_last, spark, table
 
 SCORED = {
     "status": "COMPLETE", "domain": "acme.test", "error": None,
@@ -158,15 +160,6 @@ class HelperTest(unittest.TestCase):
         self.assertEqual(t["rows"][0], ["alt", "1.1.1", "2 items", "1 fields"])
         self.assertEqual((t["shown"], t["total"]), (2, 4))
         self.assertEqual(table(None), {"columns": [], "rows": [], "total": 0, "shown": 0})
-
-    def test_describe_splits_fields_text_and_tables(self):
-        d = describe({"a": 1, "text": "hi", "tools": [{"x": 1}], "types": {"Dentist": 2}, "ids": ["G-1"], "empty": [],
-                      "nested": {"k": {"z": 1}}})
-        self.assertEqual(d["fields"], {"a": 1, "ids": "G-1", "empty": "none", "nested": "1 fields"})
-        self.assertEqual(d["text"], "hi")
-        self.assertEqual([name for name, _ in d["tables"]], ["tools", "types"])
-        self.assertEqual(describe([{"u": 1}])["tables"][0][0], "items")
-        self.assertEqual(describe(MISSING)["state"], MISSING)
 
 
 class LoadTest(unittest.TestCase):
@@ -492,8 +485,6 @@ class LoadTest(unittest.TestCase):
             self.assertEqual((m["reputation"]["state"], m["reputation"]["source"]), (MISSING, None))
             self.assertNotIn("AI reputation", [t["title"] for t in m["tiles"]])
 
-
-from test_web import WebCase
 
 
 class DashboardPageTest(WebCase):  # Skipped outside python manage.py test.

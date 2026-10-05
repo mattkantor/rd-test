@@ -84,30 +84,6 @@ def table(items, limit=200):
     return {"columns": columns, "rows": [[r.get(c) for c in columns] for r in rows], "total": len(items), "shown": len(rows)}
 
 
-def describe(data):
-    """Generic view of any report: scalar fields, a `text` body, and a table per list or flat dict."""
-    if data in (MISSING, UNREADABLE):
-        return {"state": data, "fields": {}, "text": None, "tables": []}
-    if isinstance(data, list):
-        return {"state": None, "fields": {}, "text": None, "tables": [("items", table(data))]}
-    if not isinstance(data, dict):
-        return {"state": None, "fields": {"value": cell(data)}, "text": None, "tables": []}
-    fields, tables = {}, []
-    for key, value in data.items():
-        if key == "text" and isinstance(value, str):
-            continue
-        if isinstance(value, list) and any(isinstance(i, dict) for i in value):
-            tables.append((key, table(value)))
-        elif isinstance(value, dict) and value and all(not isinstance(v, (dict, list)) for v in value.values()):
-            tables.append((key, table([{"name": k, "value": v} for k, v in value.items()])))
-        elif isinstance(value, list):
-            fields[key] = ", ".join(map(str, value[:20])) + (" …" if len(value) > 20 else "") if value else "none"
-        else:
-            fields[key] = cell(value)
-    return {"state": None, "fields": fields, "text": data.get("text") if isinstance(data.get("text"), str) else None,
-            "tables": tables}
-
-
 def sort_key(value):
     """None last; strings and numbers never compared with each other (tampered files can mix them)."""
     number = value if isinstance(value, (int, float)) and not isinstance(value, bool) else 0

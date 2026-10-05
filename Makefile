@@ -1,7 +1,7 @@
 PY ?= .venv/bin/python
 MANAGE = $(PY) manage.py
 
-.PHONY: help venv install migrate migrations superuser run worker dev test test-core scan collectstatic clean
+.PHONY: help venv install migrate migrations superuser run worker dev lint test test-core scan collectstatic clean
 
 help:  ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -29,6 +29,9 @@ worker:  ## Huey worker that runs crawl and report jobs
 
 dev: migrate  ## Web server and worker together (Ctrl+C stops both)
 	$(MANAGE) run_huey & trap 'kill $$!' EXIT; $(MANAGE) runserver
+
+lint:  ## Static analysis (ruff; install with pip install -e '.[dev]')
+	$(PY) -m ruff check src tests manage.py
 
 test:  ## Full suite, including the Django web tests
 	$(MANAGE) test tests --top-level-directory tests

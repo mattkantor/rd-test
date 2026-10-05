@@ -19,7 +19,7 @@ python manage.py run_huey                                      # worker for craw
 .venv/bin/python -m unittest tests.test_companyscan.ScannerTests.<test_name>   # single test (run from repo root with PYTHONPATH=src if not installed)
 ```
 
-No linter or formatter is configured.
+Static analysis: `make lint` (ruff, config in `pyproject.toml`; install with `pip install -e '.[dev]'`). No formatter is configured.
 
 ## Architecture
 
