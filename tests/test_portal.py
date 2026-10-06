@@ -61,3 +61,31 @@ class PortalTests(WebCase):
         self.assertEqual(self.client.get("/admin/").status_code, 200)
         with self.assertRaises(ProtectedError):
             self.ann.delete()  # PROTECT: an owner with sites can't be deleted out from under them.
+
+    def test_customer_edits_profile_and_email_but_not_url_or_username(self):
+        self.client.force_login(self.ann)
+        page = self.client.get("/portal/settings")
+        self.assertContains(page, "https://acme.test")
+        self.assertNotContains(page, 'name="site%d-origin"' % self.acme.pk)
+        self.assertNotContains(page, 'name="account-username"')
+        resp = self.client.post("/portal/settings", {"form": str(self.acme.pk), f"site{self.acme.pk}-business_name": "Acme Inc",
+                                                      f"site{self.acme.pk}-origin": "https://evil.test", f"site{self.acme.pk}-user": self.bob.pk})
+        self.assertRedirects(resp, "/portal/settings?saved=1", fetch_redirect_response=False)
+        self.acme.refresh_from_db()
+        self.assertEqual((self.acme.business_name, self.acme.origin, self.acme.user), ("Acme Inc", "https://acme.test", self.ann))
+        self.client.post("/portal/settings", {"form": "account", "account-email": "ann@new.test", "account-username": "root"})
+        self.ann.refresh_from_db()
+        self.assertEqual((self.ann.email, self.ann.username), ("ann@new.test", "ann"))
+
+    def test_customer_cannot_edit_someone_elses_site(self):
+        self.client.force_login(self.ann)
+        self.client.post("/portal/settings", {"form": str(self.other.pk), f"site{self.other.pk}-business_name": "Hacked"})
+        self.other.refresh_from_db()
+        self.assertEqual(self.other.business_name, "")
+
+    def test_invalid_profile_shows_error_and_keeps_old_value(self):
+        self.client.force_login(self.ann)
+        resp = self.client.post("/portal/settings", {"form": str(self.acme.pk), f"site{self.acme.pk}-profiles": "not a url"})
+        self.assertEqual(resp.status_code, 200)
+        self.acme.refresh_from_db()
+        self.assertEqual(self.acme.business_name, "Acme Co")

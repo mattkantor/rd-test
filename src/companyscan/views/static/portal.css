@@ -102,3 +102,11 @@ h3.sub { margin: 28px 0 4px; padding-top: 20px; border-top: 1px solid var(--pg-l
 /* The brand bar's Sign out is a text button, not a call to action. */
 .portal-body .brandbar button { background: transparent; color: var(--pg-ink-2); padding: 7px 14px; font-weight: 500; }
 .portal-body .brandbar button:hover { background: #efede8; color: var(--pg-ink); }
+
+/* Read-only identity rows above an editable form. */
+.portal-body dl.fixed { margin-bottom: 8px; }
+.portal-body dl.fixed dt, .portal-body dl.fixed dd { border-bottom: 0; }
+.portal-body .stack { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--pg-line); }
+.portal-body .stack .actions { margin-top: 28px; }
+.portal-body textarea { min-height: 96px; line-height: 1.5; resize: vertical; }
+.portal-body .stack textarea { display: block; }
