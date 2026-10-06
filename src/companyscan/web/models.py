@@ -155,12 +155,16 @@ def remember(site, bundle):
 
 
 class BlogPost(models.Model):
-    """A generated post. Always starts as a draft; only the customer's approval moves it on (publishing is a later step)."""
-    STATES = [("draft", "Draft"), ("approved", "Approved"), ("rejected", "Rejected")]
+    """A planned or generated post. A stub (title, abstract, tags, date) comes first; a written post starts as a draft, and only the
+    customer's approval moves it on (publishing is a later step)."""
+    STATES = [("stub", "Planned"), ("draft", "Draft"), ("approved", "Approved"), ("rejected", "Rejected")]
     site = models.ForeignKey(Site, on_delete=models.CASCADE, related_name="posts")
     title = models.CharField(max_length=255)
+    abstract = models.TextField(blank=True)  # What the reader learns; planned before the body is written.
     meta_description = models.CharField(max_length=255, blank=True)
-    body = models.TextField()  # Markdown.
+    tags = models.JSONField(default=list, blank=True)
+    publish_on = models.DateField(null=True, blank=True)  # When it is meant to go live; a stub has this and no body yet.
+    body = models.TextField(blank=True)  # Markdown; empty for a stub.
     keyword = models.CharField(max_length=255)
     status = models.CharField(max_length=10, choices=STATES, default="draft")
     run = models.CharField(max_length=255, blank=True)  # The crawl whose text it was written from.
@@ -332,7 +336,7 @@ def sync(root=None):
 
 class Job(models.Model):
     """A crawl, report, re-crawl or blog drafting run, run by the Huey worker. At most one running job per site (DB constraint)."""
-    KINDS = [("crawl", "Crawl"), ("recrawl", "Re-crawl"), ("report", "Report"), ("blog", "Blog posts"), ("google", "Google sync")]
+    KINDS = [("crawl", "Crawl"), ("recrawl", "Re-crawl"), ("report", "Report"), ("blog", "Blog posts"), ("titles", "Blog titles"), ("google", "Google sync")]
     STATES = [("running", "Running"), ("done", "Done"), ("error", "Error")]
     site = models.ForeignKey(Site, on_delete=models.CASCADE, related_name="jobs")
     kind = models.CharField(max_length=10, choices=KINDS)

@@ -1,9 +1,20 @@
 {% extends "portal/layout.html" %}
 {% block body %}
 <h1>Content</h1>
+{% if message %}<p class="msg">{{ message }}</p>{% endif %}
+<h2>Upcoming posts</h2>
+{% for p in upcoming %}
+<article>
+  <h3>{{ p.title }}</h3>
+  <p><small>{{ p.publish_on.strftime("%a %b %d, %Y") if p.publish_on else "unscheduled" }} · {{ p.site.host }} · keyword “{{ p.keyword }}”{% if p.tags %} · {{ p.tags | join(", ") }}{% endif %}</small></p>
+  <p>{{ p.abstract }}</p>
+</article>
+{% else %}<p>No posts planned yet.</p>{% endfor %}
+{% for s in sites %}<form method="post" action="/portal/content/plan/{{ s.pk }}">{{ csrf_input }}<button>Plan more titles for {{ s.host }}</button></form>{% endfor %}
+<h2>Drafts</h2>
 {% for p in posts %}
 <article>
-  <h2>{{ p.title }}</h2>
+  <h3>{{ p.title }}</h3>
   <p><small>{{ p.site.host }} · keyword “{{ p.keyword }}” · {{ p.created_at | local_time }} · <strong>{{ p.get_status_display() }}</strong></small></p>
   <p><em>{{ p.meta_description }}</em></p>
   <details><summary>Read the post</summary><pre style="white-space: pre-wrap">{{ p.body }}</pre></details>

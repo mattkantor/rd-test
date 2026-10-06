@@ -91,6 +91,21 @@ def draft_posts(job, progress):
     return f"Drafted {made} post(s) for approval"
 
 
+def plan_titles(job, progress):
+    """Plan the next batch of stubs: unique titles with abstracts and tags, dated after the site's last scheduled post."""
+    site = job.site
+    live = site.posts.exclude(status="rejected")
+    last = live.filter(publish_on__isnull=False).order_by("-publish_on").values_list("publish_on", flat=True).first()
+    run = site.runs.first()
+    progress(1, 1, "Planning blog titles")
+    stubs = blog.plan(site.profile(), blog.BATCH, list(site.posts.values_list("title", flat=True)), last, run.dir if run else None)
+    for stub in stubs:
+        BlogPost.objects.create(site=site, status="stub", run=run.name if run else "", profile=site.profile(), **stub)
+    if not stubs:
+        raise ValueError("No new titles: every idea repeated an existing post.")
+    return f"Planned {len(stubs)} post(s)"
+
+
 def google_sync(job, progress):
     proposals.sync_site(job.site)
     return "Google listing read; proposals are waiting for approval"
@@ -121,7 +136,7 @@ def sync_google():
         start(site.origin, "google", "Reading the Google listing…", "")
 
 
-WORK = {"crawl": crawl, "recrawl": recrawl, "report": report, "blog": draft_posts, "google": google_sync}
+WORK = {"crawl": crawl, "recrawl": recrawl, "report": report, "blog": draft_posts, "titles": plan_titles, "google": google_sync}
 
 
 @db_task()

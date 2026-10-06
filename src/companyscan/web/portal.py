@@ -5,7 +5,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from . import views
+from . import tasks, views
 from .models import BlogPost
 
 # (slug, label, coming-soon blurb); Website health is the existing dashboard, so it has no placeholder.
@@ -46,7 +46,19 @@ def tool(request, slug):
 @login_required
 def content(request):
     """The customer's blog drafts and what they decided about earlier ones."""
-    return page(request, "Content", "portal/content.html", posts=BlogPost.objects.filter(site__user=request.user).select_related("site"))
+    posts = BlogPost.objects.filter(site__user=request.user).select_related("site")
+    return page(request, "Content", "portal/content.html", message=request.GET.get("msg", ""),
+                upcoming=posts.filter(status="stub").order_by("publish_on", "id"), posts=posts.exclude(status="stub"))
+
+
+@login_required
+@require_POST
+def plan(request, site_pk):
+    """Queue a titles job for one of the customer's sites."""
+    site = get_object_or_404(request.user.sites, pk=site_pk)
+    run = site.runs.first()
+    started = tasks.start(site.origin, "titles", "Planning blog titles…", run.name if run else "")
+    return redirect("/portal/content" + ("" if started else "?msg=A+job+is+already+running+for+this+site."))
 
 
 @login_required

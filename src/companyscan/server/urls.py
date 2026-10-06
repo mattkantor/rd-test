@@ -10,6 +10,7 @@ urlpatterns = [
     path("login", portal.Login.as_view(), name="login"),
     path("logout", LogoutView.as_view(), name="logout"),
     path("portal/content", portal.content),
+    path("portal/content/plan/<int:site_pk>", portal.plan),
     path("portal/content/<int:pk>/<str:action>", portal.decide),
     path("portal/local", local.local),
     path("portal/local/<int:site_pk>/pick", local.pick),
