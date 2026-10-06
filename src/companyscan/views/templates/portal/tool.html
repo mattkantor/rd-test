@@ -1,0 +1,11 @@
+{% extends "portal/layout.html" %}
+{% block lede %}<p class="lede">{% if slug == "health" %}Crawl results and fixes for your websites.{% else %}This tool is on its way.{% endif %}</p>{% endblock %}
+{% block body %}
+{% if slug == "health" %}
+  {% for s in sites %}<section class="card row">
+    <strong>{{ s.host }}</strong>
+    {% if s.runs.exists() %}<a class="button" href="/site/{{ s.pk }}">View report</a>{% else %}<span class="pill">No crawl yet</span>{% endif %}
+  </section>
+  {% else %}<section class="card empty"><p>No site is assigned to your account yet.</p></section>{% endfor %}
+{% else %}<section class="card empty"><h2>Coming soon</h2><p>We'll let you know when {{ label }} is ready.</p></section>{% endif %}
+{% endblock %}

@@ -29,6 +29,8 @@ def validate_urls(text):
 
 class Site(models.Model):
     origin = models.CharField(max_length=500, unique=True)
+    # The customer who owns this site in the portal; unowned sites are staff-only.
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="sites")
     # The customer-facing scorecard lives at /sites/<public_id>: unguessable, so the page needs no login.
     public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     business_name = models.CharField(max_length=255, blank=True)
@@ -48,6 +50,14 @@ class Site(models.Model):
                                                help_text="What one new customer is worth over the relationship")
     target_customers = models.PositiveIntegerField("New customers wanted per year", null=True, blank=True,
                                                    help_text="How many new customers the business wants to win in a year")
+    phone = models.CharField(max_length=50, blank=True, help_text="Main business phone; compared with the Google listing")
+    # What the business does and the topics to rank for: the input to the scheduled blog drafts (blog/).
+    keywords = models.TextField(blank=True, help_text="Keywords to write posts for, one per line")
+    offering = models.TextField("What the business does", blank=True)
+    blog_every_days = models.PositiveIntegerField("Blog post every N days", null=True, blank=True, help_text="Leave blank to stop drafting posts")
+    blog_per_run = models.PositiveSmallIntegerField("Posts per run", default=1)
+    blog_repeat_keywords = models.BooleanField("Reuse keywords", default=False,
+                                               help_text="Allow a keyword again once every keyword was used in the last posts")
     place_id = models.CharField("Google place ID", max_length=255, blank=True,
                                 help_text="Filled in by the first crawl that finds the Google listing; clear it to search again")
     # The last LLM read of the site ({key, identity, ...}, see reputation.read_site): reused while the page text, ICP and
@@ -73,6 +83,11 @@ class Site(models.Model):
         multi = (("--person", self.people), ("--alias", self.aliases), ("--known-profile", self.profiles))
         return ([f"{flag}={value.strip()}" for flag, value in single if value.strip()]
                 + [f"{flag}={value}" for flag, text in multi for value in lines(text)])
+
+    def profile(self):
+        """The full profile the blog generator writes from (also stored on each post as its source version)."""
+        return {"business_name": self.business_name, "icp": self.icp, "category": self.category, "location": self.location,
+                "phone": self.phone, "website": self.origin, "people": lines(self.people), "aliases": lines(self.aliases), "keywords": lines(self.keywords), "offering": self.offering}
 
     def question_key(self):
         """The profile fields buyer questions are written for; changing one gets a new question set."""
@@ -137,6 +152,102 @@ def remember(site, bundle):
         elif items and not found.items:  # Emptied by "new questions": this crawl wrote the new set.
             found.items, found.run = items, bundle.name
             found.save()
+
+
+class BlogPost(models.Model):
+    """A planned or generated post. A stub (title, abstract, tags, date) comes first; a written post starts as a draft, and only the
+    customer's approval moves it on (publishing is a later step)."""
+    STATES = [("stub", "Planned"), ("draft", "Draft"), ("approved", "Approved"), ("rejected", "Rejected")]
+    site = models.ForeignKey(Site, on_delete=models.CASCADE, related_name="posts")
+    title = models.CharField(max_length=255)
+    abstract = models.TextField(blank=True)  # What the reader learns; planned before the body is written.
+    meta_description = models.CharField(max_length=255, blank=True)
+    tags = models.JSONField(default=list, blank=True)
+    publish_on = models.DateField(null=True, blank=True)  # When it is meant to go live; a stub has this and no body yet.
+    body = models.TextField(blank=True)  # Markdown; empty for a stub.
+    keyword = models.CharField(max_length=255)
+    status = models.CharField(max_length=10, choices=STATES, default="draft")
+    run = models.CharField(max_length=255, blank=True)  # The crawl whose text it was written from.
+    profile = models.JSONField(default=dict)  # Site.profile() when it was written.
+    created_at = models.DateTimeField(auto_now_add=True)
+    decided_at = models.DateTimeField(null=True, blank=True)
+    decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return self.title
+
+
+class GoogleConnection(models.Model):
+    """A customer's Google account linked to a site. Tokens are Fernet-encrypted (google/oauth.py); revoked_at set means the
+    customer disconnected or Google refused the refresh, and the site shows "Reconnect Google"."""
+    site = models.ForeignKey(Site, on_delete=models.CASCADE, related_name="google_connections")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    token = models.TextField()
+    refresh_token = models.TextField(blank=True)
+    expires_at = models.DateTimeField(null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["site"], condition=Q(revoked_at__isnull=True), name="one_active_google_connection_per_site")]
+
+    def __str__(self):
+        return f"{self.site} Google"
+
+
+class GoogleLocation(models.Model):
+    """The Business Profile location the customer picked for the site, and what the last read found."""
+    connection = models.OneToOneField(GoogleConnection, on_delete=models.CASCADE, related_name="location")
+    account = models.CharField(max_length=255)  # accounts/123
+    location_id = models.CharField(max_length=255)  # locations/456
+    name = models.CharField(max_length=255, blank=True)
+    snapshot = models.JSONField(default=dict)  # {"location": ..., "claimed": bool, "verifications": [...], "options": [...]}
+    read_at = models.DateTimeField(null=True)
+
+    def __str__(self):
+        return self.name or self.location_id
+
+
+class Proposal(models.Model):
+    """A change the agent wants to make on Google. Nothing is written until the customer approves it. The rows are the audit
+    trail: each applied write keeps its before and after values and who approved it."""
+    KINDS = [("field_edit", "Listing edit"), ("review_reply", "Review reply"), ("qna_answer", "Question answer"), ("claim_start", "Start claim")]
+    STATES = [("pending", "Pending"), ("approved", "Approved"), ("rejected", "Rejected"), ("applied", "Applied"), ("failed", "Failed")]
+    location = models.ForeignKey(GoogleLocation, on_delete=models.CASCADE, related_name="proposals")
+    kind = models.CharField(max_length=20, choices=KINDS)
+    target = models.CharField(max_length=255)  # Field-mask path, or the review or question resource name; "claim" for a claim.
+    before = models.JSONField(default=dict)
+    after = models.JSONField(default=dict)
+    status = models.CharField(max_length=10, choices=STATES, default="pending")
+    created_at = models.DateTimeField(auto_now_add=True)
+    decided_at = models.DateTimeField(null=True, blank=True)
+    decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    error = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"{self.get_kind_display()} {self.target} ({self.status})"
+
+
+class SiteConnection(models.Model):
+    """How a customer's website admin can be reached, for exporting content to it later. The secret (password or API token)
+    is Fernet-encrypted and never shown again. Not verified against the website."""
+    PLATFORMS = [("wordpress", "WordPress"), ("shopify", "Shopify"), ("webflow", "Webflow"), ("squarespace", "Squarespace"),
+                 ("wix", "Wix"), ("other", "Other")]
+    site = models.OneToOneField(Site, on_delete=models.CASCADE, related_name="connection")
+    platform = models.CharField(max_length=20, choices=PLATFORMS)
+    admin_url = models.URLField(max_length=500)
+    username = models.CharField(max_length=255, blank=True)
+    secret = models.TextField()  # Encrypted.
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.site} {self.platform}"
 
 
 class Run(models.Model):
@@ -240,8 +351,8 @@ def sync(root=None):
 
 
 class Job(models.Model):
-    """A crawl, report or re-crawl, run by the Huey worker. At most one running job per site (DB constraint)."""
-    KINDS = [("crawl", "Crawl"), ("recrawl", "Re-crawl"), ("report", "Report")]
+    """A crawl, report, re-crawl or blog drafting run, run by the Huey worker. At most one running job per site (DB constraint)."""
+    KINDS = [("crawl", "Crawl"), ("recrawl", "Re-crawl"), ("report", "Report"), ("blog", "Blog posts"), ("titles", "Blog titles"), ("google", "Google sync")]
     STATES = [("running", "Running"), ("done", "Done"), ("error", "Error")]
     site = models.ForeignKey(Site, on_delete=models.CASCADE, related_name="jobs")
     kind = models.CharField(max_length=10, choices=KINDS)

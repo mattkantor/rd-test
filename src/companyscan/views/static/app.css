@@ -220,3 +220,11 @@ form.site-edit small { display: block; margin: -6px 0 12px; color: #5d6470; }
 .run-meta dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0 0 10px; }
 .run-meta dt { color: var(--ink-3); } .run-meta dd { margin: 0; overflow-wrap: anywhere; }
 @media (max-width: 700px) { .run-head { grid-template-columns: 1fr; } }
+
+/* Customer portal: tool navigation on the left. */
+main.portal { display: flex; gap: 32px; }
+.portal-nav { display: flex; flex-direction: column; gap: 8px; min-width: 180px; }
+.portal-nav a[aria-current] { font-weight: 700; }
+@media (max-width: 700px) { main.portal { flex-direction: column; } }
+.brandbar form { display: inline; }
+button.link { background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }

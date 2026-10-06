@@ -4,7 +4,7 @@ from django.utils.html import format_html
 
 from ..dimensions import DIMENSIONS
 from . import tasks
-from .models import Job, QuestionSet, Run, Site, sync
+from .models import BlogPost, Job, Proposal, QuestionSet, Run, Site, sync
 from .views import crawl_url
 
 admin.site.site_header = admin.site.site_title = "Company Footprint"
@@ -12,7 +12,7 @@ admin.site.site_header = admin.site.site_title = "Company Footprint"
 
 @admin.register(Site)
 class SiteAdmin(admin.ModelAdmin):
-    list_display = ["origin", "business_name", "location"]
+    list_display = ["origin", "business_name", "location", "user"]
     search_fields = ["origin", "business_name"]
 
     def get_readonly_fields(self, request, obj=None):
@@ -67,3 +67,22 @@ class QuestionSetAdmin(admin.ModelAdmin):
     """Stored buyer questions; edit items to change what every crawl asks, or empty them to have the next crawl write new ones."""
     list_display = ["site", "kind", "icp", "location", "category", "run", "created_at"]
     list_filter = ["kind", "site"]
+
+
+@admin.register(BlogPost)
+class BlogPostAdmin(admin.ModelAdmin):
+    """Generated posts; the customer decides in the portal, so the status and its audit fields are read-only here."""
+    list_display = ["title", "site", "keyword", "status", "created_at"]
+    list_filter = ["status", "site"]
+    readonly_fields = ["site", "keyword", "status", "run", "profile", "created_at", "decided_at", "decided_by"]
+
+
+@admin.register(Proposal)
+class ProposalAdmin(admin.ModelAdmin):
+    """The audit trail of Google changes: before and after values, who decided and what Google answered. Read-only."""
+    list_display = ["kind", "target", "status", "location", "created_at", "decided_by"]
+    list_filter = ["kind", "status"]
+    readonly_fields = [f.name for f in Proposal._meta.fields]
+
+    def has_add_permission(self, request):
+        return False

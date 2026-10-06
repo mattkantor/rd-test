@@ -1,0 +1,33 @@
+{% extends "portal/layout.html" %}
+{% block lede %}<p class="lede">Blog posts we plan and draft for you. Nothing is published until you approve it.</p>{% endblock %}
+{% block body %}
+{% if message %}<p class="msg">{{ message }}</p>{% endif %}
+<section class="card">
+  <div class="card-head"><h2>Upcoming posts</h2>
+    <span class="actions">{% for s in sites %}<form method="post" action="/portal/content/plan/{{ s.pk }}">{{ csrf_input }}<button class="secondary">Plan more titles for {{ s.host }}</button></form>{% endfor %}</span></div>
+  {% for p in upcoming %}
+  <article class="item">
+    <h3>{{ p.title }}</h3>
+    <p class="meta">{{ p.publish_on.strftime("%a %b %d, %Y") if p.publish_on else "Unscheduled" }} · {{ p.site.host }} · keyword “{{ p.keyword }}”{% if p.tags %} · {{ p.tags | join(", ") }}{% endif %}</p>
+    <p>{{ p.abstract }}</p>
+  </article>
+  {% else %}<p class="empty-line">No posts planned yet. Plan more titles to fill your calendar.</p>{% endfor %}
+</section>
+<section class="card">
+  <div class="card-head"><h2>Drafts</h2></div>
+  {% for p in posts %}
+  <article class="item">
+    <div class="item-head"><h3>{{ p.title }}</h3><span class="pill pill-{{ p.status }}">{{ p.get_status_display() }}</span></div>
+    <p class="meta">{{ p.site.host }} · keyword “{{ p.keyword }}” · {{ p.created_at | local_time }}</p>
+    <p><em>{{ p.meta_description }}</em></p>
+    <details><summary>Read the post</summary><pre>{{ p.body }}</pre></details>
+    {% if p.status == "draft" %}
+    <div class="actions">
+      <form method="post" action="/portal/content/{{ p.pk }}/approve">{{ csrf_input }}<button>Approve</button></form>
+      <form method="post" action="/portal/content/{{ p.pk }}/reject">{{ csrf_input }}<button class="secondary">Reject</button></form>
+    </div>
+    {% endif %}
+  </article>
+  {% else %}<p class="empty-line">No posts yet. Drafts appear here for you to approve.</p>{% endfor %}
+</section>
+{% endblock %}

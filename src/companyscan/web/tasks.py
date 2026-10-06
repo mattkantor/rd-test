@@ -1,18 +1,21 @@
 """Crawl, report and re-crawl jobs, run by the Huey worker (`python manage.py run_huey`)."""
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone as dj_timezone
-from huey.contrib.djhuey import db_task
+from huey import crontab
+from huey.contrib.djhuey import db_periodic_task, db_task
 
+from .. import blog
+from ..google import proposals
 from ..cli import directory_name, parser, run
 from ..report.analyze import analyze
 from ..report.pdf import render_pdf
 from ..scan.crawler import origin
-from .models import Job, Site, remember, sync
+from .models import BlogPost, Job, Site, remember, sync
 
 log = logging.getLogger(__name__)
 
@@ -71,7 +74,69 @@ def recrawl(job, progress):
     return f"{crawled} · report ready"
 
 
-WORK = {"crawl": crawl, "recrawl": recrawl, "report": report}
+def draft_posts(job, progress):
+    """Draft the site's scheduled number of posts from its profile and the crawl in job.run; every one waits as a draft."""
+    site, bundle = job.site, settings.COMPANYSCAN_OUTPUT / job.run
+    made = 0
+    for n in range(1, max(site.blog_per_run, 1) + 1):
+        recent = list(site.posts.values_list("keyword", flat=True)[:blog.REPEAT_WINDOW])
+        keyword = blog.next_keyword(site.keywords, recent, site.blog_repeat_keywords)
+        if not keyword:
+            break
+        progress(n, site.blog_per_run, f"Drafting a post on “{keyword}”")
+        BlogPost.objects.create(site=site, keyword=keyword, run=job.run, profile=site.profile(), **blog.generate(site.profile(), keyword, bundle))
+        made += 1
+    if not made:
+        raise ValueError("No post drafted: add keywords, or every keyword was used in the last posts.")
+    return f"Drafted {made} post(s) for approval"
+
+
+def plan_titles(job, progress):
+    """Plan the next batch of stubs: unique titles with abstracts and tags, dated after the site's last scheduled post."""
+    site = job.site
+    live = site.posts.exclude(status="rejected")
+    last = live.filter(publish_on__isnull=False).order_by("-publish_on").values_list("publish_on", flat=True).first()
+    run = site.runs.first()
+    progress(1, 1, "Planning blog titles")
+    stubs = blog.plan(site.profile(), blog.BATCH, list(site.posts.values_list("title", flat=True)), last, run.dir if run else None)
+    for stub in stubs:
+        BlogPost.objects.create(site=site, status="stub", run=run.name if run else "", profile=site.profile(), **stub)
+    if not stubs:
+        raise ValueError("No new titles: every idea repeated an existing post.")
+    return f"Planned {len(stubs)} post(s)"
+
+
+def google_sync(job, progress):
+    proposals.sync_site(job.site)
+    return "Google listing read; proposals are waiting for approval"
+
+
+def due_sites(now):
+    """Sites with a schedule and a keyword to use, a crawl, and a last draft older than their frequency (or none yet)."""
+    for site in Site.objects.filter(blog_every_days__isnull=False, blog_every_days__gt=0).exclude(keywords=""):
+        last = site.posts.first()
+        recent = list(site.posts.values_list("keyword", flat=True)[:blog.REPEAT_WINDOW])
+        if not blog.next_keyword(site.keywords, recent, site.blog_repeat_keywords):
+            continue  # Nothing to write about: don't queue a job that can only fail.
+        if site.runs.exists() and (not last or last.created_at + timedelta(days=site.blog_every_days) <= now):
+            yield site
+
+
+@db_periodic_task(crontab(minute="0"))
+def schedule_blogs():
+    """Hourly: queue a drafting job for each site that is due (one running job per site still applies)."""
+    for site in due_sites(dj_timezone.now()):
+        start(site.origin, "blog", "Drafting blog posts…", site.runs.first().name)
+
+
+@db_periodic_task(crontab(hour="6", minute="0"))
+def sync_google():
+    """Daily: re-read each connected listing, so new reviews, questions and drifted fields get proposals."""
+    for site in Site.objects.filter(google_connections__revoked_at__isnull=True, google_connections__location__isnull=False).distinct():
+        start(site.origin, "google", "Reading the Google listing…", "")
+
+
+WORK = {"crawl": crawl, "recrawl": recrawl, "report": report, "blog": draft_posts, "titles": plan_titles, "google": google_sync}
 
 
 @db_task()

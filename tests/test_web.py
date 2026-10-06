@@ -422,7 +422,8 @@ class WebTests(WebCase):
         self.assertContains(page, 'value="https://acme.test" disabled')
         self.assertNotContains(page, 'name="origin"')
         response = self.client.post(f"/site/{site.pk}/edit", {"origin": "https://evil.test", "business_name": "Acme Dental",
-                                                               "icp": "families", "city": "Austin", "state": "TX", "country": ""})
+                                                               "icp": "families", "city": "Austin", "state": "TX", "country": "",
+                                                               "blog_per_run": 1})
         self.assertEqual(response["location"], f"/site/{site.pk}")
         site.refresh_from_db()
         self.assertEqual((site.origin, site.business_name, site.location), ("https://acme.test", "Acme Dental", "Austin, TX"))
@@ -522,10 +523,11 @@ class WebTests(WebCase):
         self.client.logout()
         response = self.client.get("/")
         self.assertEqual(response.status_code, 302)
-        self.assertIn("/admin/login/", response["location"])
+        self.assertIn("/login", response["location"])  # The portal sign-in.
         self.assertEqual(self.client.get("/files/anything").status_code, 302)
-        self.client.force_login(User.objects.create_user("plain"))  # Logged in but not staff.
-        self.assertEqual(self.client.get("/").status_code, 302)
+        self.client.force_login(User.objects.create_user("plain"))  # A customer, not staff.
+        self.assertNotContains(self.client.get("/"), "Sites</h1>")  # Gets the welcome page, not the staff list.
+        self.assertEqual(self.client.post("/crawl", {"url": "https://acme.test"}).status_code, 302)  # Staff-only action.
         self.assertEqual(self.client.get("/", HTTP_HOST="evil.test").status_code, 400)  # DNS rebinding.
         self.client.force_login(User.objects.get(username="staff"))
         self.client.handler.enforce_csrf_checks = True

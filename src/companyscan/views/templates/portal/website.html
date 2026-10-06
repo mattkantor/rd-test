@@ -1,0 +1,23 @@
+{% extends "portal/layout.html" %}
+{% block lede %}<p class="lede">Your account, profile and website connection.</p>
+<nav class="tabbar" aria-label="Settings"><a href="/portal/settings">Account and profile</a><a href="/portal/settings/website" aria-current="page">Website connection</a></nav>{% endblock %}
+{% block body %}
+{% if sites %}
+<section class="card">
+  <h2>Website connection</h2>
+  <p class="note">Connect your website's admin so we can send it content later, such as blog posts. Credentials are stored encrypted. They are saved, not tested, and nothing is sent to your website yet.</p>
+  <form method="get" action="/portal/settings/website">
+    <label>Site <select name="site" onchange="this.form.submit()">{% for s in sites %}<option value="{{ s.pk }}"{% if s.pk == chosen.pk %} selected{% endif %}>{{ s.host }}</option>{% endfor %}</select></label>
+    <noscript><button>Choose</button></noscript>
+  </form>
+  {% if saved %}<p class="msg ok">Saved.</p>{% endif %}
+  <form class="stack" method="post" action="/portal/settings/website?site={{ chosen.pk }}">{{ csrf_input }}
+    {{ form.as_div() }}
+    <button>{{ "Update connection" if connected else "Connect" }}</button>
+  </form>
+  {% if connected %}
+  <form method="post" action="/portal/settings/website/{{ chosen.pk }}/disconnect">{{ csrf_input }}<button class="danger">Disconnect and delete credentials</button></form>
+  {% endif %}
+</section>
+{% else %}<section class="card empty"><p>No site is assigned to your account yet.</p></section>{% endif %}
+{% endblock %}

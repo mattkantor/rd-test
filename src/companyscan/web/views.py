@@ -4,6 +4,7 @@ from urllib.parse import urlencode
 
 from django.conf import settings
 from django.contrib.admin.views.decorators import staff_member_required
+from django.contrib.auth.decorators import login_required
 from django.db.models import Count
 from django.forms import modelform_factory
 from django.http import FileResponse, Http404, HttpResponse
@@ -52,6 +53,16 @@ def dashboard_or_home(bundle, return_to, message=""):
     if return_to == "site" and run:
         return redirect("site", pk=run.site_id)
     return redirect("dashboard", name=bundle.name) if return_to == "dashboard" else back()
+
+
+def site_qs(request):
+    """Sites this user may see: all for staff, their own for a customer."""
+    return Site.objects.all() if request.user.is_staff else Site.objects.filter(user=request.user)
+
+
+def owned_run(request, name):
+    """The Run named `name` if this user may see it, else 404 (staff: any)."""
+    return get_object_or_404(Run.objects.filter(site__in=site_qs(request)), name=name)
 
 
 @staff_member_required
@@ -107,6 +118,8 @@ def render_run(request, name, on_site=False):
     manifest = dashboard.read(bundle, "manifest.json") if bundle else None
     if not (isinstance(manifest, dict) and "counts" in manifest):  # Crawl bundles only.
         raise Http404
+    if not request.user.is_staff:
+        owned_run(request, name)
     sort, desc = request.GET.get("sort", "id"), request.GET.get("desc", "") in {"1", "true"}
     url = crawl_url(bundle)  # None for a tampered input_url: the dashboard still renders, without job status.
     job = Job.objects.filter(site__origin=origin(url)).first() if url else None
@@ -122,9 +135,10 @@ def render_run(request, name, on_site=False):
                                               "history": run.site.runs.all() if run else [], "on_site": on_site})
 
 
-@staff_member_required
+@login_required
 def job_status(request, name):
     """Just the job panel, for the dashboard to poll while a job runs."""
+    owned_run(request, name)
     bundle = bundle_path(name)
     url = crawl_url(bundle)
     if not url:
@@ -140,11 +154,11 @@ def site_job(request, pk):
     return render(request, "job_mini.html", {"job": get_object_or_404(Site, pk=pk).jobs.first()})
 
 
-@staff_member_required
+@login_required
 def site_page(request, pk):
     """A site's current assessment (its latest crawl) plus the history of older ones."""
     sync()
-    run = get_object_or_404(Site, pk=pk).runs.first()
+    run = get_object_or_404(site_qs(request), pk=pk).runs.first()
     if not run:
         raise Http404
     return render_run(request, run.name, on_site=True)
@@ -172,7 +186,8 @@ def public_site(request, public_id):
 
 # The origin is the site's identity (runs attach to it by URL), so it is set once, by the first crawl, never edited.
 SiteForm = modelform_factory(Site, fields=["business_name", "icp", "category", "people", "aliases", "profiles",
-                                           "city", "state", "country", "customer_ltv", "target_customers", "place_id"])
+                                           "city", "state", "country", "customer_ltv", "target_customers", "place_id",
+                                           "phone", "offering", "keywords", "blog_every_days", "blog_per_run", "blog_repeat_keywords"])
 
 
 def suggestions(site):
@@ -218,18 +233,18 @@ def new_questions(request, pk):
     return redirect("site_edit", pk=site.pk)
 
 
-@staff_member_required
+@login_required
 def run_dashboard(request, name):
     sync()
     return render_run(request, name)
 
 
-@staff_member_required
+@login_required
 def scorecard(request, name):
     """Render the run's customer scorecard PDF from its newest analysis and the site's current LTV and goal."""
     bundle = bundle_path(name)
-    run = Run.objects.filter(name=name).select_related("site").first()
-    if not bundle or not run:
+    run = owned_run(request, name)
+    if not bundle:
         raise Http404
     try:
         pdf = render_scorecard(bundle, run.site.customer_ltv, run.site.target_customers)
@@ -239,11 +254,12 @@ def scorecard(request, name):
     return FileResponse(pdf.open("rb"), content_type="application/pdf", filename=f"{run.site.host}-scorecard.pdf")
 
 
-@staff_member_required
+@login_required
 def fixpack(request, name):
     """The run's fix pack as a zip, built from its newest analysis so it always matches the report."""
     bundle = bundle_path(name)
-    if not bundle or not Run.objects.filter(name=name).exists():
+    owned_run(request, name)
+    if not bundle:
         raise Http404
     try:
         filename, data = zipped(bundle)
@@ -253,12 +269,14 @@ def fixpack(request, name):
     return HttpResponse(data, content_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
-@staff_member_required
+@login_required
 def files(request, path):
     root = settings.COMPANYSCAN_OUTPUT.resolve()
     target = (root / path).resolve()
     if not (target.is_relative_to(root) and target.is_file()):
         raise Http404
+    if not request.user.is_staff:  # A customer reads only inside the bundles of their own runs.
+        owned_run(request, target.relative_to(root).parts[0])
     # Show Markdown and JSON in the browser rather than downloading them.
     response = FileResponse(target.open("rb"))
     if target.suffix in {".md", ".json"}:

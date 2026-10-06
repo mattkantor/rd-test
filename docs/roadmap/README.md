@@ -10,9 +10,11 @@ Baseline of what the product does today: [`../features.md`](../features.md).
 
 | # | Item | Status |
 | --- | --- | --- |
-| 001 | [Customer portal](001-customer-portal.md) | planned |
-| 002 | [Scheduled blog posts from the site profile](002-scheduled-blog-posts.md) | planned |
-| 003 | [Google Business Profile agent](003-google-business-profile.md) | planned |
+| 001 | [Customer portal](001-customer-portal.md) | done |
+| 002 | [Scheduled blog posts from the site profile](002-scheduled-blog-posts.md) | done |
+| 003 | [Google Business Profile agent](003-google-business-profile.md) | done |
+| 004 | [Blog title planning](004-blog-title-planning.md) | done |
+| 005 | [Website connection](005-website-connection.md) | done |
 
 ## Adding an item
 

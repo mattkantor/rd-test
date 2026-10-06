@@ -1,0 +1,15 @@
+{% include "_portal_head.html" %}
+<link rel="stylesheet" href="{{ static('portal.css') }}">
+<body class="portal-body">
+{% include "_header.html" %}
+<main class="login">
+  <h1>Sign in</h1>
+  <p class="lede">Access your web and AI presence portal.</p>
+  <form class="card stack" method="post">{{ csrf_input }}
+    {{ form.as_div() }}
+    <input type="hidden" name="next" value="{{ next }}">
+    <button>Sign in</button>
+  </form>
+</main>
+</body>
+</html>

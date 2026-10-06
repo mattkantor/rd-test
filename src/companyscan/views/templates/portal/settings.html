@@ -1,0 +1,27 @@
+{% extends "portal/layout.html" %}
+{% block lede %}<p class="lede">Your account, business profile and website connection.</p>
+<nav class="tabbar" aria-label="Settings"><a href="/portal/settings" aria-current="page">Account and profile</a><a href="/portal/settings/website">Website connection</a></nav>{% endblock %}
+{% block body %}
+{% if saved %}<p class="msg ok" role="status">Saved.</p>{% endif %}
+<section class="card">
+  <h2>Account</h2>
+  <dl class="fixed"><dt>Username</dt><dd>{{ request.user.get_username() }}</dd></dl>
+  <form class="stack" method="post">{{ csrf_input }}
+    <input type="hidden" name="form" value="account">
+    {{ account.as_div() }}
+    <div class="actions"><button>Save account</button></div>
+  </form>
+</section>
+{% for s, form in profiles %}
+<section class="card">
+  <h2>{{ s.host }}</h2>
+  <dl class="fixed"><dt>Website URL</dt><dd>{{ s.origin }}</dd></dl>
+  <p class="note">The URL and username identify your account, so they can't be changed here. Contact your account manager if one is wrong.</p>
+  <form class="stack" method="post">{{ csrf_input }}
+    <input type="hidden" name="form" value="{{ s.pk }}">
+    {{ form.as_div() }}
+    <div class="actions"><button>Save profile</button></div>
+  </form>
+</section>
+{% else %}<section class="card empty"><p>No site is assigned to your account yet.</p></section>{% endfor %}
+{% endblock %}

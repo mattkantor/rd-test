@@ -1,0 +1,9 @@
+{% extends "portal/layout.html" %}
+{% block lede %}<p class="lede">Welcome, {{ request.user.get_username() }}. Here is where to improve your website, search and AI presence.</p>{% endblock %}
+{% block body %}
+<div class="grid">
+{% for slug, label in tools %}
+  <a class="card card-link" href="/portal/{{ slug }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="{{ icons[slug] }}"/></svg><h2>{{ label }}</h2></a>
+{% endfor %}
+</div>
+{% endblock %}

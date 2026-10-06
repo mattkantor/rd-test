@@ -1,6 +1,6 @@
 # 003 Google Business Profile agent
 
-**Status:** planned
+**Status:** done
 **Depends on:** 001 (customer portal and sign-in), 002 only for the Content tool's shared approval pattern
 **Touches:** `src/companyscan/dimensions/google_business.py` (Places lookup, read-only, unchanged), new `src/companyscan/google/` (OAuth, Business Profile client, change proposals), `src/companyscan/web/` (connect page, approval queue, models), new migration, `src/companyscan/web/tasks.py` (sync and claim-status jobs)
 
@@ -10,14 +10,14 @@ A customer connects their Google account in the portal. An agent reads their Goo
 
 ## Acceptance criteria
 
-- [ ] The customer connects their Google account from the portal with OAuth. Tokens are stored encrypted per site, and the customer can disconnect at any time.
-- [ ] The app lists the Business Profile locations that account manages. The customer picks which one belongs to their site. A location is matched to the site by website or phone, with a warning if neither matches.
-- [ ] The app reads the location's name, address, phone, hours, categories, description, and website, and compares them with the site profile (001 and the existing profile fields). Each mismatch is shown with the current and proposed value.
-- [ ] Edits are proposed, never sent automatically. The customer approves or rejects each one. Approved edits are written through the Business Profile API and recorded with the before and after values.
-- [ ] Claim status is read for the site. If the location is unclaimed, the app starts Google's verification flow and shows its status. Completing verification stays with Google (postcard, phone or video); the app does not try to bypass it.
-- [ ] Reviews and questions are read from the API. The app drafts a reply to each, and the customer approves before it is posted. The draft never states facts that aren't in the profile.
-- [ ] The Places API key (`PLACES_API_KEY` / `GOOGLE_PLACES_API_KEY`) stays read-only and remains the source for the existing `google_business` dimension. OAuth is used only for reads and writes on the Business Profile API.
-- [ ] Tests cover: OAuth callback and token storage (Google stubbed), mismatch detection, proposals waiting for approval, a rejected proposal never writing, and a reply draft never posting without approval.
+- [x] The customer connects their Google account from the portal with OAuth. Tokens are stored encrypted per site, and the customer can disconnect at any time.
+- [x] The app lists the Business Profile locations that account manages. The customer picks which one belongs to their site. A location is matched to the site by website or phone, with a warning if neither matches.
+- [x] The app reads the location's name, address, phone, hours, categories, description, and website, and compares them with the site profile (001 and the existing profile fields). Each mismatch is shown with the current and proposed value.
+- [x] Edits are proposed, never sent automatically. The customer approves or rejects each one. Approved edits are written through the Business Profile API and recorded with the before and after values.
+- [x] Claim status is read for the site. If the location is unclaimed, the app starts Google's verification flow and shows its status. Completing verification stays with Google (postcard, phone or video); the app does not try to bypass it.
+- [x] Reviews and questions are read from the API. The app drafts a reply to each, and the customer approves before it is posted. The draft never states facts that aren't in the profile.
+- [x] The Places API key (`PLACES_API_KEY` / `GOOGLE_PLACES_API_KEY`) stays read-only and remains the source for the existing `google_business` dimension. OAuth is used only for reads and writes on the Business Profile API.
+- [x] Tests cover: OAuth callback and token storage (Google stubbed), mismatch detection, proposals waiting for approval, a rejected proposal never writing, and a reply draft never posting without approval.
 
 ## Scope
 
@@ -183,3 +183,37 @@ the site profile and the crawl. The customer approves or edits it before it is p
 ## Ledger
 
 <!-- Append entries below this line. Never edit a past entry. -->
+
+{CHECKPOINT} #1 · agent:matthewkantor-local · abematt@feat/roadmap-001-003@75f7f32
+
+**Done:** nothing for 003; 001 and 002 are committed (portal login, ownership checks, approve/reject pattern, `Job` kinds).
+**Next:** models + migration, `google/` (oauth, client, compare, proposals, replies), `google` job, Local business page, tests.
+**Open:** Business Profile API access and Google app verification are unconfirmed; see #3.
+
+{DECISION} #2 · agent:matthewkantor-local · abematt@feat/roadmap-001-003@75f7f32
+
+Hand-written OAuth in `google/oauth.py` (stdlib `urllib`) over django-allauth because the item needs Fernet-encrypted per-site tokens and a connect flow that is not a login; allauth stores plain tokens, adds sites/socialaccount tables and Django-template pages the Jinja UI doesn't use. Only new dependency is `cryptography`.
+
+{BLOCKED} #3 · agent:matthewkantor-local · abematt@feat/roadmap-001-003@75f7f32
+
+**Question:** is Business Profile API access approved for the Google project, and is the OAuth consent screen set up for `business.manage`?
+**Options:** (a) build everything against stubbed HTTP, untested live; (b) wait.
+**Recommend:** (a). **If no answer:** doing (a); endpoint paths are written from Google's docs from memory and need one live check before launch. Claude was also denied reading `oauth.json`, so credentials come only from `GOOGLE_OAUTH_*` env vars.
+
+{DECISION} #4 · agent:matthewkantor-local · abematt@feat/roadmap-001-003@75f7f32
+
+Edits limited to name, phone, website and description over address, hours and categories because the site profile is free text and cannot map safely to Google's structured address, hours or category IDs; those three are read and shown only. `Site.phone` added so a phone mismatch is detectable.
+
+{DECISION} #5 · agent:matthewkantor-local · abematt@feat/roadmap-001-003@75f7f32
+
+Approve applies the write in the same request (status `approved` then `applied` or `failed`) over a separate apply step because a customer approval is the only trigger the item allows; a rejected proposal has no code path to the client.
+
+{DECISION} #6 · agent:matthewkantor-local · abematt@feat/roadmap-001-003@75f7f32
+
+Redirect URI `/google/callback` (from `env.example`) and the Local business nav entry host the feature, over the Google SEO entry, because Google SEO means search rank, which is a non-goal here.
+
+{CHECKPOINT} #7 · agent:matthewkantor-local · abematt@feat/roadmap-001-003@75f7f32
+
+**Done:** models + migration 0011, `google/` (oauth, client, compare, replies, proposals), `google` job + daily `sync_google`, Local business page, admin audit view; 273 tests and ruff green; README and `cryptography` extra updated.
+**Next:** one live check against Google once API access is approved: endpoint paths in `google/client.py`, the `updateMask` for `phoneNumbers.primaryPhone`, and the verification flow.
+**Open:** #3 still unanswered, so the write path is tested only against stubs. Google app verification is needed before non-test users connect; HTTPS redirect URI needed in production.
