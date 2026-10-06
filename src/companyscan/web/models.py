@@ -234,6 +234,22 @@ class Proposal(models.Model):
         return f"{self.get_kind_display()} {self.target} ({self.status})"
 
 
+class SiteConnection(models.Model):
+    """How a customer's website admin can be reached, for exporting content to it later. The secret (password or API token)
+    is Fernet-encrypted and never shown again. Not verified against the website."""
+    PLATFORMS = [("wordpress", "WordPress"), ("shopify", "Shopify"), ("webflow", "Webflow"), ("squarespace", "Squarespace"),
+                 ("wix", "Wix"), ("other", "Other")]
+    site = models.OneToOneField(Site, on_delete=models.CASCADE, related_name="connection")
+    platform = models.CharField(max_length=20, choices=PLATFORMS)
+    admin_url = models.URLField(max_length=500)
+    username = models.CharField(max_length=255, blank=True)
+    secret = models.TextField()  # Encrypted.
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.site} {self.platform}"
+
+
 class Run(models.Model):
     """One crawl bundle folder under COMPANYSCAN_OUTPUT; values copied from its manifest.json."""
     site = models.ForeignKey(Site, on_delete=models.CASCADE, related_name="runs")

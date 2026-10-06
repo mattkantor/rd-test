@@ -5,7 +5,7 @@
   <nav class="portal-nav" aria-label="Tools">
     {% for slug, label in tools %}<a href="/portal/{{ slug }}"{% if request.path == "/portal/" ~ slug %} aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}
     <hr>
-    <a href="/portal/settings"{% if request.path == "/portal/settings" %} aria-current="page"{% endif %}>Settings</a>
+    <a href="/portal/settings"{% if request.path.startswith("/portal/settings") %} aria-current="page"{% endif %}>Settings</a>
     <a href="/portal/help"{% if request.path == "/portal/help" %} aria-current="page"{% endif %}>Help</a>
   </nav>
   <section>{% block body %}{% endblock %}</section>

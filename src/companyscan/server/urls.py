@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth.views import LogoutView
 from django.urls import path
 
-from ..web import local, portal, views
+from ..web import connect, local, portal, views
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -20,6 +20,8 @@ urlpatterns = [
     path("google/connect/<int:site_pk>", local.connect, name="google_connect"),
     path("google/callback", local.callback),
     path("portal/settings", portal.settings_page),
+    path("portal/settings/website", connect.website),
+    path("portal/settings/website/<int:site_pk>/disconnect", connect.disconnect),
     path("portal/help", portal.help_page),
     path("portal/<slug:slug>", portal.tool),
     path("crawl", views.crawl),

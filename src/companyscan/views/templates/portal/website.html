@@ -1,0 +1,21 @@
+{% extends "portal/layout.html" %}
+{% block body %}
+<h1>Settings</h1>
+<p><a href="/portal/settings">Account and profile</a> · <strong>Website connection</strong></p>
+<h2>Website connection</h2>
+<p><small>Connect your website's admin so we can send it content later, such as blog posts. Credentials are stored encrypted. They are saved, not tested, and nothing is sent to your website yet.</small></p>
+{% if sites %}
+  <form method="get" action="/portal/settings/website">
+    <label>Site <select name="site" onchange="this.form.submit()">{% for s in sites %}<option value="{{ s.pk }}"{% if s.pk == chosen.pk %} selected{% endif %}>{{ s.host }}</option>{% endfor %}</select></label>
+    <noscript><button>Choose</button></noscript>
+  </form>
+  {% if saved %}<p class="msg">Saved.</p>{% endif %}
+  <form class="crawl" method="post" action="/portal/settings/website?site={{ chosen.pk }}">{{ csrf_input }}
+    {{ form.as_div() }}
+    <button>{{ "Update connection" if connected else "Connect" }}</button>
+  </form>
+  {% if connected %}
+  <form method="post" action="/portal/settings/website/{{ chosen.pk }}/disconnect">{{ csrf_input }}<button>Disconnect and delete credentials</button></form>
+  {% endif %}
+{% else %}<p>No site is assigned to your account yet.</p>{% endif %}
+{% endblock %}

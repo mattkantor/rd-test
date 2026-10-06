@@ -1,6 +1,7 @@
 {% extends "portal/layout.html" %}
 {% block body %}
 <h1>Settings</h1>
+<p><strong>Account and profile</strong> · <a href="/portal/settings/website">Website connection</a></p>
 <h2>Account</h2>
 <dl><dt>Username</dt><dd>{{ request.user.get_username() }}</dd><dt>Email</dt><dd>{{ request.user.email or "—" }}</dd></dl>
 {% for s in sites %}
