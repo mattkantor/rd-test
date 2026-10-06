@@ -1,28 +1,27 @@
 {% extends "portal/layout.html" %}
+{% block lede %}<p class="lede">Connect your Google account and we read your Google Business Profile, then propose fixes. Nothing is changed on Google until you approve it.</p>{% endblock %}
 {% block body %}
-<h1>Local business</h1>
-<p><small>Connect your Google account and we read your Google Business Profile, then propose fixes. Nothing is changed on Google until you approve it.</small></p>
 {% if message %}<p class="msg">{{ message }}</p>{% endif %}
 {% for c in cards %}
-<section>
-  <h2>{{ c.site.host }}</h2>
+<section class="card">
+  <div class="card-head"><h2>{{ c.site.host }}</h2>
+  {% if c.connected and c.location %}<span class="pill {{ 'pill-approved' if c.snap.claimed else 'pill-draft' }}">{{ "Claimed" if c.snap.claimed else "Not claimed" }}</span>{% endif %}</div>
   {% if not c.connected %}
     <p>{% if c.reconnect %}Google access ended. {% endif %}<a class="button" href="/google/connect/{{ c.site.pk }}">{{ "Reconnect Google" if c.reconnect else "Connect Google" }}</a></p>
   {% elif not c.location %}
     <h3>Choose your listing</h3>
     {% if c.error %}<p class="msg">{{ c.error }}</p>{% endif %}
     {% for loc in c.choices %}
-      <form method="post" action="/portal/local/{{ c.site.pk }}/pick">{{ csrf_input }}
+      <form class="item" method="post" action="/portal/local/{{ c.site.pk }}/pick">{{ csrf_input }}
         <input type="hidden" name="location" value="{{ loc.name }}">
-        <strong>{{ loc.title }}</strong> <small>{{ loc.websiteUri or "" }} {{ loc.phoneNumbers.primaryPhone if loc.phoneNumbers else "" }}</small>
-        {% if not loc.match %}<br><small>Warning: neither the website nor the phone matches this site.</small>
+        <strong>{{ loc.title }}</strong> <span class="meta">{{ loc.websiteUri or "" }} {{ loc.phoneNumbers.primaryPhone if loc.phoneNumbers else "" }}</span>
+        {% if not loc.match %}<p class="meta">Warning: neither the website nor the phone matches this site.</p>
         <label><input type="checkbox" name="confirm" value="1" required> This is my business</label>{% endif %}
-        <button>Use this listing</button>
+        <div class="actions"><button>Use this listing</button></div>
       </form>
-    {% else %}{% if not c.error %}<p>This Google account manages no locations.</p>{% endif %}{% endfor %}
+    {% else %}{% if not c.error %}<p class="empty-line">This Google account manages no locations.</p>{% endif %}{% endfor %}
   {% else %}
-    <p><strong>{{ c.location.name }}</strong> · {{ "Claimed" if c.snap.claimed else "Not claimed" }}
-      {% if c.location.read_at %}· read {{ c.location.read_at | local_time }}{% else %}· not read yet{% endif %}
+    <p class="meta">{{ c.location.name }} {% if c.location.read_at %}· read {{ c.location.read_at | local_time }}{% else %}· not read yet{% endif %}
       {% for v in c.snap.verifications or [] %}· verification: {{ v.method }} {{ v.state }}{% endfor %}</p>
     {% set loc = c.snap.location or {} %}
     <dl>
@@ -31,25 +30,27 @@
       <dt>Categories</dt><dd>{{ loc.categories.primaryCategory.displayName if loc.categories else "—" }}</dd>
     </dl>
     {% if c.job and c.job.state == "error" %}<p class="msg">Last sync failed: {{ c.job.label }}</p>{% endif %}
-    <form method="post" action="/portal/local/{{ c.site.pk }}/sync" style="display:inline">{{ csrf_input }}<button>Sync now</button></form>
-    <form method="post" action="/portal/local/{{ c.site.pk }}/disconnect" style="display:inline">{{ csrf_input }}<button>Disconnect Google</button></form>
-    <h3>Waiting for your approval</h3>
+    <div class="actions">
+      <form method="post" action="/portal/local/{{ c.site.pk }}/sync">{{ csrf_input }}<button>Sync now</button></form>
+      <form method="post" action="/portal/local/{{ c.site.pk }}/disconnect">{{ csrf_input }}<button class="secondary">Disconnect Google</button></form>
+    </div>
+    <h3 class="sub">Waiting for your approval</h3>
     {% for p in c.queue %}
-    <article>
+    <article class="item">
       <strong>{{ p.get_kind_display() }}</strong>
-      {% if p.kind == "field_edit" %}<br>{{ p.target }}: <del>{{ p.before.value or "(empty)" }}</del> → {{ p.after.value }}
-      {% elif p.kind == "claim_start" %}<br>Start Google's verification ({{ p.after.method }}). Google completes it, for example by postcard or phone.
-      {% else %}<br><small>“{{ p.before.comment }}”</small>{% endif %}
+      {% if p.kind == "field_edit" %}<p>{{ p.target }}: <del>{{ p.before.value or "(empty)" }}</del> → {{ p.after.value }}</p>
+      {% elif p.kind == "claim_start" %}<p>Start Google's verification ({{ p.after.method }}). Google completes it, for example by postcard or phone.</p>
+      {% else %}<p class="meta">“{{ p.before.comment }}”</p>{% endif %}
       <form method="post" action="/portal/local/proposal/{{ p.pk }}/approve">{{ csrf_input }}
-        {% if p.kind in ("review_reply", "qna_answer") %}<textarea name="text" rows="4" cols="60">{{ p.after.text }}</textarea><br>{% endif %}
-        <button>Approve and send to Google</button>
+        {% if p.kind in ("review_reply", "qna_answer") %}<textarea name="text" rows="4">{{ p.after.text }}</textarea>{% endif %}
+        <div class="actions"><button>Approve and send to Google</button></div>
       </form>
-      <form method="post" action="/portal/local/proposal/{{ p.pk }}/reject">{{ csrf_input }}<button>Reject</button></form>
+      <form method="post" action="/portal/local/proposal/{{ p.pk }}/reject">{{ csrf_input }}<button class="secondary">Reject</button></form>
     </article>
-    {% else %}<p>Nothing is waiting.</p>{% endfor %}
-    {% if c.done %}<h3>History</h3>
-    <ul>{% for p in c.done %}<li>{{ p.get_kind_display() }} {{ p.target }} · {{ p.get_status_display() }}{% if p.error %}: {{ p.error }}{% endif %}</li>{% endfor %}</ul>{% endif %}
+    {% else %}<p class="empty-line">Nothing is waiting.</p>{% endfor %}
+    {% if c.done %}<h3 class="sub">History</h3>
+    <ul class="history">{% for p in c.done %}<li>{{ p.get_kind_display() }} {{ p.target }} · {{ p.get_status_display() }}{% if p.error %}: {{ p.error }}{% endif %}</li>{% endfor %}</ul>{% endif %}
   {% endif %}
 </section>
-{% else %}<p>No site is assigned to your account yet.</p>{% endfor %}
+{% else %}<section class="card empty"><p>No site is assigned to your account yet.</p></section>{% endfor %}
 {% endblock %}

@@ -1,12 +1,12 @@
 {% extends "portal/layout.html" %}
+{% block lede %}<p class="lede">Your account, profile and website connection.</p>
+<nav class="tabbar" aria-label="Settings"><a href="/portal/settings" aria-current="page">Account and profile</a><a href="/portal/settings/website">Website connection</a></nav>{% endblock %}
 {% block body %}
-<h1>Settings</h1>
-<p><strong>Account and profile</strong> · <a href="/portal/settings/website">Website connection</a></p>
-<h2>Account</h2>
-<dl><dt>Username</dt><dd>{{ request.user.get_username() }}</dd><dt>Email</dt><dd>{{ request.user.email or "—" }}</dd></dl>
+<section class="card"><h2>Account</h2>
+<dl><dt>Username</dt><dd>{{ request.user.get_username() }}</dd><dt>Email</dt><dd>{{ request.user.email or "—" }}</dd></dl></section>
 {% for s in sites %}
-<h2>{{ s.host }}</h2>
-<dl>{% for attr, label in fields %}<dt>{{ label }}</dt><dd>{{ s[attr] or "—" }}</dd>{% endfor %}</dl>
-{% else %}<p>No site is assigned to your account yet.</p>{% endfor %}
-<p><small>Settings are read-only for now.</small></p>
+<section class="card"><h2>{{ s.host }}</h2>
+<dl>{% for attr, label in fields %}<dt>{{ label }}</dt><dd>{{ s[attr] or "—" }}</dd>{% endfor %}</dl></section>
+{% else %}<section class="card empty"><p>No site is assigned to your account yet.</p></section>{% endfor %}
+<p class="note">Settings are read-only for now.</p>
 {% endblock %}

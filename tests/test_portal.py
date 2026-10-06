@@ -28,7 +28,7 @@ class PortalTests(WebCase):
             self.assertIn("/login", self.client.get(url)["location"], url)
         self.assertEqual(self.client.get("/login").status_code, 200)
         self.assertRedirects(self.client.post("/login", {"username": "ann", "password": "pw"}), "/", fetch_redirect_response=False)
-        self.assertContains(self.client.get("/"), "Hello, world")
+        self.assertContains(self.client.get("/"), "Welcome, ann")
 
     def test_navigation_lists_every_tool_with_settings_and_help_last(self):
         self.client.force_login(self.ann)

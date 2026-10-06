@@ -1,0 +1,104 @@
+/* Customer portal shell and components. Loaded after pangram.css, uses its --pg-* tokens. */
+.portal { display: grid; grid-template-columns: 264px minmax(0, 1fr); min-height: calc(100vh - 59px); }
+.portal-side { background: var(--pg-surface); border-right: 1px solid var(--pg-line); padding: 28px 20px; position: sticky; top: 0; align-self: start; min-height: calc(100vh - 59px); box-sizing: border-box; }
+.portal-site { display: flex; gap: 12px; align-items: center; padding: 0 8px 24px; margin-bottom: 8px; border-bottom: 1px solid var(--pg-line); }
+.portal-site strong { display: block; font-size: 15px; word-break: break-all; }
+.portal-site small { margin: 0; font-size: 12px; }
+.portal-avatar { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: var(--pg-green-dark); color: #fff; font: 400 22px "Instrument Serif", Georgia, serif; }
+.portal-nav { display: flex; flex-direction: column; gap: 2px; }
+.portal-group { margin: 20px 8px 6px; font-size: 12px; font-weight: 600; color: var(--pg-ink-3); }
+.portal-nav a { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; font-size: 14.5px; font-weight: 500; color: var(--pg-ink-2); text-decoration: none; border-left: 3px solid transparent; }
+.portal-nav a svg { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.portal-nav a:hover { background: #efede8; color: var(--pg-ink); }
+.portal-nav a[aria-current] { background: var(--pg-green-dark); color: #fff; border-left-color: var(--pg-orange); }
+.portal-nav a:focus-visible, .portal-body a:focus-visible, .portal-body button:focus-visible { outline: 3px solid var(--pg-orange); outline-offset: 2px; }
+
+.portal-main { max-width: 960px; width: 100%; box-sizing: border-box; padding: 48px 48px 80px; margin: 0; }
+.page-head { padding-bottom: 28px; margin-bottom: 32px; border-bottom: 1px solid var(--pg-line); }
+.page-head h1 { margin: 0 0 10px; }
+.lede { margin: 0; max-width: 62ch; color: var(--pg-ink-2); font-size: 16px; line-height: 1.55; }
+.tabbar { display: flex; gap: 4px; margin-top: 24px; }
+.tabbar a { padding: 8px 16px; border-radius: 999px; font-size: 14px; font-weight: 500; color: var(--pg-ink-2); text-decoration: none; }
+.tabbar a:hover { background: #efede8; }
+.tabbar a[aria-current] { background: var(--pg-ink); color: #fff; }
+
+.portal-body .card { background: var(--pg-surface); border: 1px solid var(--pg-line); border-radius: 20px; padding: 28px; margin: 0 0 24px; }
+.card h2 { margin: 0 0 16px; font: 400 26px "Instrument Serif", Georgia, serif; letter-spacing: -.01em; }
+.card-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; padding-bottom: 16px; margin-bottom: 4px; border-bottom: 1px solid var(--pg-line); }
+.card-head h2 { margin: 0; }
+.card.row { display: flex; justify-content: space-between; align-items: center; }
+.card.empty { text-align: center; padding: 48px 28px; color: var(--pg-ink-2); }
+.card.empty h2 { margin-bottom: 8px; }
+.empty-line { color: var(--pg-ink-3); margin: 20px 0 4px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; }
+.card-link { display: flex; flex-direction: column; gap: 20px; margin: 0 !important; color: var(--pg-ink); text-decoration: none; }
+.card-link:hover { border-color: var(--pg-orange); box-shadow: 0 8px 16px rgba(20, 32, 30, .06); }
+.card-link svg { width: 28px; height: 28px; fill: none; stroke: var(--pg-green); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.card-link h2 { margin: 0; font-size: 22px; }
+
+.item { padding: 20px 0; border-bottom: 1px solid var(--pg-line); }
+.item:last-child { border-bottom: 0; padding-bottom: 0; }
+.item h3 { margin: 0 0 6px; font-size: 17px; font-weight: 600; }
+.item p { margin: 8px 0; }
+.item-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+h3.sub { margin: 28px 0 4px; padding-top: 20px; border-top: 1px solid var(--pg-line); font-size: 15px; }
+.meta { color: var(--pg-ink-3); font-size: 13.5px; }
+.note { margin: 0 0 20px; color: var(--pg-ink-3); font-size: 13.5px; max-width: 70ch; }
+.history { margin: 8px 0 0; padding-left: 20px; color: var(--pg-ink-2); }
+.history li { padding: 4px 0; }
+.item details { margin: 12px 0; border-radius: 12px; padding: 10px 14px; }
+.item summary { cursor: pointer; font-weight: 500; }
+.item pre { white-space: pre-wrap; margin: 12px 0 0; padding: 16px; border-radius: 10px; font-size: 13px; line-height: 1.6; }
+
+.actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 16px; }
+.actions form, .actions form + form { margin: 0; }
+.portal-body button, .portal-body a.button { border-radius: 999px; padding: 10px 20px; font-weight: 600; font-size: 14px; }
+.portal-body button { background: var(--pg-green-dark); color: #fff; box-shadow: none; }
+.portal-body button:hover { background: var(--pg-green-mid); }
+.portal-body button.secondary, .portal-body form + form button { background: transparent; color: var(--pg-ink); box-shadow: inset 0 0 0 1.5px var(--pg-ink); }
+.portal-body button.secondary:hover, .portal-body form + form button:hover { background: var(--pg-ink); color: #fff; }
+.portal-body button.danger { background: transparent; color: #b3261e; box-shadow: inset 0 0 0 1.5px #b3261e; }
+.portal-body button.danger:hover { background: #b3261e; color: #fff; }
+.portal-body a.button { display: inline-block; padding: 10px 20px; }
+.portal-body form + form { margin-top: 12px; }
+
+.stack > div, .stack > p { margin: 0 0 20px; }
+.portal-body label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 6px; }
+.portal-body input:not([type=checkbox]):not([type=hidden]), .portal-body select, .portal-body textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 11px 14px; border: 1px solid #cfccc4; border-radius: 12px; background: #fff; }
+.portal-body input:focus, .portal-body select:focus, .portal-body textarea:focus { outline: 3px solid var(--pg-orange-light); border-color: var(--pg-orange); }
+.portal-body .helptext, .portal-body .errorlist { font-size: 13px; color: var(--pg-ink-3); margin: 6px 0 0; padding: 0; list-style: none; }
+.portal-body .errorlist { color: #b3261e; }
+.portal-body select { width: auto; min-width: 220px; margin: 0 0 20px 8px; }
+
+.portal-body dl { display: grid; grid-template-columns: minmax(120px, 200px) 1fr; margin: 0; }
+.portal-body dt, .portal-body dd { margin: 0; padding: 14px 0; border-bottom: 1px solid var(--pg-line); }
+.portal-body dt { color: var(--pg-ink-3); font-size: 14px; }
+.portal-body dl > :nth-last-child(-n+2) { border-bottom: 0; }
+
+.pill { display: inline-block; padding: 3px 12px; border-radius: 999px; font-size: 12.5px; font-weight: 600; background: #efede8; color: var(--pg-ink-2); white-space: nowrap; }
+.pill-approved, .pill-published { background: var(--pg-mint); color: var(--pg-green-dark); }
+.pill-draft { background: var(--pg-orange-light); color: #9a3a00; }
+.pill-rejected { background: #f6d9d6; color: #8c1d14; }
+.portal-body .msg { padding: 12px 16px; border-radius: 12px; background: #f6d9d6; color: #8c1d14; }
+.portal-body .msg.ok { background: var(--pg-mint); color: var(--pg-green-dark); }
+
+.login { max-width: 420px; margin: 0 auto; padding: 72px 16px; }
+.login h1 { margin-bottom: 8px; }
+.login .lede { margin-bottom: 28px; }
+.login .card { margin: 0; }
+.login button { width: 100%; }
+
+@media (max-width: 900px) {
+  .portal { display: block; }
+  .portal-side { position: static; min-height: 0; border-right: 0; border-bottom: 1px solid var(--pg-line); padding: 16px; }
+  .portal-site, .portal-group { display: none; }
+  .portal-nav { flex-direction: row; overflow-x: auto; gap: 6px; }
+  .portal-nav a { flex: none; border-left: 0; border-radius: 999px; }
+  .portal-main { padding: 32px 16px 56px; }
+  .portal-body dl { grid-template-columns: 1fr; }
+  .portal-body dt { border-bottom: 0; padding-bottom: 0; }
+}
+
+/* The brand bar's Sign out is a text button, not a call to action. */
+.portal-body .brandbar button { background: transparent; color: var(--pg-ink-2); padding: 7px 14px; font-weight: 500; }
+.portal-body .brandbar button:hover { background: #efede8; color: var(--pg-ink); }
