@@ -85,12 +85,14 @@
       </p>{% endif %}
       {% set running = job and job.state == "running" %}
       <div id="job" data-poll="/run/{{ bundle.name | urlencode }}/job">{% include "job.html" %}</div>
+      {% if request.user.is_staff %}
       <form class="recrawl" method="post" action="/recrawl">{{ csrf_input }}
         <input type="hidden" name="dir" value="{{ bundle.name }}">
         <input type="hidden" name="return_to" value="{{ 'site' if on_site else 'dashboard' }}">
         <button data-busy {% if running %}disabled{% endif %}>Re-crawl + report</button>
         <small title="Crawls again with every check (WCAG, analytics, AEO, social previews, security, fonts, AI reputation, AI search, citation gap, answer coverage, practitioner profiles, Google listing, Meta ads), then writes the report and PDF for the new run. This run is kept. AI reputation and AI search each make about 50 LLM calls, and the report is one long LLM call.">Every check, then the report and PDF · a few minutes · this run is kept</small>
       </form>
+      {% endif %}
     </div>
     <aside class="run-meta">
       <dl>
@@ -103,7 +105,7 @@
           {% elif m.integrity is string %}<span class="st st-unknown">{{ m.integrity }}</span>
           {% else %}<span class="st st-fail">{{ m.integrity | length }} problem(s)</span>: {{ m.integrity | join("; ") }}{% endif %}</dd>
       </dl>
-      {% if site %}<a class="button" href="/site/{{ site.pk }}/edit">Edit profile</a>{% endif %}
+      {% if site and request.user.is_staff %}<a class="button" href="/site/{{ site.pk }}/edit">Edit profile</a>{% endif %}
     </aside>
   </header>
 
@@ -163,7 +165,7 @@
         {% if m.report.analysis and site %} · <a href="/sites/{{ site.public_id }}"><b>Customer page</b></a>{% endif %}</p>
     {% else %}
       <p class="muted">No report yet.</p>
-      <form method="post" action="/report">{{ csrf_input }}<input type="hidden" name="dir" value="{{ bundle.name }}"><input type="hidden" name="return_to" value="{{ 'site' if on_site else 'dashboard' }}"><button data-busy {% if running %}disabled{% endif %}>Generate report</button></form>
+      {% if request.user.is_staff %}<form method="post" action="/report">{{ csrf_input }}<input type="hidden" name="dir" value="{{ bundle.name }}"><input type="hidden" name="return_to" value="{{ 'site' if on_site else 'dashboard' }}"><button data-busy {% if running %}disabled{% endif %}>Generate report</button></form>{% endif %}
     {% endif %}
     {% if m.report.findings %}
       <table class="data"><thead><tr><th>ID</th><th>Verdict</th><th>Finding</th></tr></thead><tbody>

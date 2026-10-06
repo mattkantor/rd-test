@@ -1,11 +1,17 @@
 from django.contrib import admin
+from django.contrib.auth.views import LogoutView
 from django.urls import path
 
-from ..web import views
+from ..web import portal, views
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("", views.index, name="index"),
+    path("", portal.home, name="home"),
+    path("login", portal.Login.as_view(), name="login"),
+    path("logout", LogoutView.as_view(), name="logout"),
+    path("portal/settings", portal.settings_page),
+    path("portal/help", portal.help_page),
+    path("portal/<slug:slug>", portal.tool),
     path("crawl", views.crawl),
     path("report", views.report),
     path("recrawl", views.recrawl),

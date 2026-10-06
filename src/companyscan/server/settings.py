@@ -83,7 +83,8 @@ HUEY = {
     "immediate": os.environ.get("HUEY_IMMEDIATE") == "1",
 }
 
-LOGIN_URL = "admin:login"
+LOGIN_URL = "login"  # Customer sign-in; staff pages still send to the admin login.
+LOGIN_REDIRECT_URL = LOGOUT_REDIRECT_URL = "/"
 STATIC_URL = "static/"
 STATICFILES_DIRS = [VIEWS / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"

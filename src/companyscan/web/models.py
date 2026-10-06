@@ -29,6 +29,8 @@ def validate_urls(text):
 
 class Site(models.Model):
     origin = models.CharField(max_length=500, unique=True)
+    # The customer who owns this site in the portal; unowned sites are staff-only.
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="sites")
     # The customer-facing scorecard lives at /sites/<public_id>: unguessable, so the page needs no login.
     public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     business_name = models.CharField(max_length=255, blank=True)

@@ -12,7 +12,7 @@ admin.site.site_header = admin.site.site_title = "Company Footprint"
 
 @admin.register(Site)
 class SiteAdmin(admin.ModelAdmin):
-    list_display = ["origin", "business_name", "location"]
+    list_display = ["origin", "business_name", "location", "user"]
     search_fields = ["origin", "business_name"]
 
     def get_readonly_fields(self, request, obj=None):

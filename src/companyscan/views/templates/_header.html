@@ -4,10 +4,15 @@
   <div class="brandbar-in">
     <a class="mark" href="/" aria-label="Obvious Choice Systems home">Obvious Choice<i>.</i></a>
     <nav aria-label="Main">
+      {% if request.user.is_staff %}
       <a href="/"{% if here == "/" or here.startswith(("/site", "/run")) %} aria-current="page"{% endif %}>Sites</a>
       <a href="/admin/">Admin</a>
+      {% elif request.user.is_authenticated %}
+      <a href="/"{% if here == "/" %} aria-current="page"{% endif %}>Home</a>
+      {% endif %}
     </nav>
     <div class="brandbar-icons">
+      {% if request.user.is_authenticated %}<form method="post" action="/logout">{{ csrf_input }}<button class="link">Sign out</button></form>{% endif %}
       <a class="icon-btn" href="#" aria-label="Alerts" title="Alerts">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z M10 20.5a2 2 0 0 0 4 0"/></svg>
       </a>

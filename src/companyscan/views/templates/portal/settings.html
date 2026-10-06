@@ -1,0 +1,11 @@
+{% extends "portal/layout.html" %}
+{% block body %}
+<h1>Settings</h1>
+<h2>Account</h2>
+<dl><dt>Username</dt><dd>{{ request.user.get_username() }}</dd><dt>Email</dt><dd>{{ request.user.email or "—" }}</dd></dl>
+{% for s in sites %}
+<h2>{{ s.host }}</h2>
+<dl>{% for attr, label in fields %}<dt>{{ label }}</dt><dd>{{ s[attr] or "—" }}</dd>{% endfor %}</dl>
+{% else %}<p>No site is assigned to your account yet.</p>{% endfor %}
+<p><small>Settings are read-only for now.</small></p>
+{% endblock %}

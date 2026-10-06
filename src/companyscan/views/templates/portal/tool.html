@@ -1,0 +1,8 @@
+{% extends "portal/layout.html" %}
+{% block body %}
+<h1>{{ label }}</h1>
+{% if slug == "health" %}
+  {% for s in sites %}<p>{% if s.runs.exists() %}<a href="/site/{{ s.pk }}">{{ s.host }}</a>{% else %}{{ s.host }} <small>(no crawl yet)</small>{% endif %}</p>
+  {% else %}<p>No site is assigned to your account yet.</p>{% endfor %}
+{% else %}<p>Coming soon.</p>{% endif %}
+{% endblock %}

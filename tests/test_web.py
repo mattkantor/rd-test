@@ -522,10 +522,11 @@ class WebTests(WebCase):
         self.client.logout()
         response = self.client.get("/")
         self.assertEqual(response.status_code, 302)
-        self.assertIn("/admin/login/", response["location"])
+        self.assertIn("/login", response["location"])  # The portal sign-in.
         self.assertEqual(self.client.get("/files/anything").status_code, 302)
-        self.client.force_login(User.objects.create_user("plain"))  # Logged in but not staff.
-        self.assertEqual(self.client.get("/").status_code, 302)
+        self.client.force_login(User.objects.create_user("plain"))  # A customer, not staff.
+        self.assertNotContains(self.client.get("/"), "Sites</h1>")  # Gets the welcome page, not the staff list.
+        self.assertEqual(self.client.post("/crawl", {"url": "https://acme.test"}).status_code, 302)  # Staff-only action.
         self.assertEqual(self.client.get("/", HTTP_HOST="evil.test").status_code, 400)  # DNS rebinding.
         self.client.force_login(User.objects.get(username="staff"))
         self.client.handler.enforce_csrf_checks = True
