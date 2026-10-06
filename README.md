@@ -59,6 +59,7 @@ Only the checks you use need a key; a missing key makes that check `UNKNOWN` rat
 | `COMPANYSCAN_REPORT_MODEL` | model for **Generate report** | `openai:gpt-5` |
 | `COMPANYSCAN_REPUTATION_MODEL` | model for reputation, site read, questions and extraction | `openai:gpt-4o-mini` |
 | `COMPANYSCAN_BLOG_MODEL` | model for scheduled blog drafts | `openai:gpt-5-mini` |
+| `COMPANYSCAN_AGENT_MODEL` | the model a new **Agent** starts with | `openai:gpt-5-mini` |
 | `COMPANYSCAN_SEARCH_MODEL` | `ai_search` answers (an OpenAI model with `web_search`) | `openai:gpt-5-mini` |
 | `COMPANYSCAN_OUTPUT` | where the web UI and worker read and write bundles (both must share it) | `./output` |
 | `CHROME` | path to Chrome/Chromium for the PDF, if not found | auto-detected |
@@ -191,6 +192,8 @@ A Django app for staff users: enter a URL, tick dimensions, and **Crawl**. The t
 
 **Website connection.** Settings has a **Website connection** subpage. The customer chooses one of their sites, then saves the platform (WordPress, Shopify, Webflow, Squarespace, Wix or Other), the admin URL, a username and a password or API token. The secret is encrypted with `GOOGLE_TOKEN_KEY` and never shown again; leaving it blank on edit keeps it, and **Disconnect** deletes it. The credentials are stored, not tested, and nothing is exported yet: this is the setting later export features will use.
 
+**Agents.** An **Agent** in `/admin/` is one agentic step you write yourself: a name and slug, a system prompt, a `provider:model` string, an optional temperature (blank for the model's default, which some models require), static **context** as JSON, and an **output schema** as JSON Schema. Code calls `agent.perform({...})`, which merges that dict over the static context, sends the prompt with the context as JSON (always labelled third-party data, never instructions), and requires every property the schema declares unless the schema lists its own `required`. The answer is written to `output/agents/<slug>-<timestamp>-<id>.json` and recorded as an **Agent run** with what went in, what came back and the file path; a failure is recorded the same way with its error and then raised. **Run now** in the admin runs an agent on its stored context alone, in the request, so you can see the JSON before any other code calls it. What an agent is *for* — where the context comes from and what is done with the answer — lives in the calling code, not in the row.
+
 **Google Business Profile.** Under **Local business** a customer connects their Google account (OAuth, `business.manage` scope), picks the listing that belongs to the site (a warning and a confirmation if neither website nor phone matches), and the worker reads it daily or on **Sync now**. The agent queues **proposals**: edits to name, phone, website and description where they differ from the site profile, a start-claim request when the listing is unclaimed, and drafted replies to reviews and questions (profile facts only). Nothing is sent to Google until the customer approves a proposal; a rejected one never writes. Applied proposals keep their before and after values (see `Proposal` in the admin). Address, hours and categories are shown, not edited. Set `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URI` (must match the OAuth client) and `GOOGLE_TOKEN_KEY` (Fernet key; tokens are stored encrypted); see `env.example`. The Business Profile API needs Google's approval for the project, and outside users need Google's OAuth app verification. The Places key stays read-only and feeds only the `google_business` check.
 
 Crawl, report and re-crawl jobs run in the Huey worker, which writes progress to the `Job` row; a database constraint allows one running job per site. If a worker dies mid-job, set that job's state to `error` in the admin to unblock the site. `/admin/` lists sites, runs (with a **Dashboard** link and **Generate report** / **Re-crawl** actions) and jobs.
@@ -236,6 +239,7 @@ Both LLM steps use LangChain `provider:model` strings, read from the environment
 | `COMPANYSCAN_REPORT_MODEL` | **Generate report** (one long call) | `openai:gpt-5` |
 | `COMPANYSCAN_REPUTATION_MODEL` | `llm_reputation` and `companyscan reputation` (~50 short calls); the site read, questions and extraction in `ai_search` | `openai:gpt-4o-mini` |
 | `COMPANYSCAN_SEARCH_MODEL` | `ai_search` branded and buyer answers (~25 calls with OpenAI's `web_search` tool, so it must be an OpenAI model that supports it) | `openai:gpt-5-mini` |
+| `COMPANYSCAN_AGENT_MODEL` | the default model of a new **Agent**; each agent stores its own | `openai:gpt-5-mini` |
 
 Keys and model variables are listed under [Environment](#environment). Other providers work with their LangChain package installed (e.g. `anthropic:claude-sonnet-5` with `langchain-anthropic`).
 
@@ -350,10 +354,11 @@ src/companyscan/
 │                            #   technical, measurement, accessibility, social, artifacts (bundle writer)
 ├── dimensions/              # optional evidence: security, fonts, reputation (llm_reputation, ai_search), coverage,
 │                            #   practitioners, google_business, meta_ads, jev_copy, identity, ranking (+ DIMENSIONS registry)
-├── llm.py                   # LangChain chat models; REPORT / REPUTATION / SEARCH models from env
+├── llm.py                   # LangChain chat models; REPORT / REPUTATION / SEARCH / AGENT models from env
+├── agents.py                # configured agents: stored prompt + context dict in, validated JSON out
 ├── report/                  # analyze.py (hash check, digest, one LLM call), pdf.py (pandoc + Chrome)
 ├── server/                  # Django project: settings.py (env-driven), urls.py, wsgi.py
-├── web/                     # Django app: models (Site, Run, Job), views, admin, tasks.py (Huey jobs), dashboard.py
+├── web/                     # Django app: models (Site, Run, Job, Agent), views, admin, tasks.py (Huey jobs), dashboard.py
 └── views/
     ├── templates/           # UI markup (Jinja2): index, dashboard, site_edit, job status
     ├── static/app.css       # UI styles

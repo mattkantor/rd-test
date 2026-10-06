@@ -2,15 +2,17 @@
 import json
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
 from django.conf import settings
-from django.core.validators import URLValidator
+from django.core.validators import MaxValueValidator, MinValueValidator, URLValidator
 from django.db import models
 from django.db.models import Q
 
+from .. import agents
 from ..dimensions.reputation import QUESTIONS
+from ..llm import AGENT_MODEL
 from ..report.analyze import latest
 from ..scan.crawler import normalize, origin
 from .dashboard import SNAPSHOT, load, snapshot
@@ -178,6 +180,71 @@ class BlogPost(models.Model):
 
     def __str__(self):
         return self.title
+
+
+def default_schema():
+    return {"type": "object", "properties": {}}
+
+
+class Agent(models.Model):
+    """An agentic resource: a stored prompt, model and output schema, all editable in the admin. A caller hands it a
+    context dict; it returns JSON, written to output/agents/ and recorded as an AgentRun. What the agent is *for* —
+    where the context comes from and what is done with the answer — lives in the caller, never here."""
+    name = models.CharField(max_length=255)
+    slug = models.SlugField(max_length=100, unique=True, help_text="How code refers to it, and the output file's name")
+    description = models.TextField(blank=True, help_text="What this agent is for; not sent to the model")
+    prompt = models.TextField(help_text="The system prompt: what to do, and what each output field must contain")
+    model = models.CharField(max_length=100, default=AGENT_MODEL, help_text="provider:model, e.g. openai:gpt-5-mini")
+    temperature = models.FloatField(null=True, blank=True, validators=[MinValueValidator(0), MaxValueValidator(2)],
+                                    help_text="Blank for the model's default; some models reject a temperature")
+    context = models.JSONField(default=dict, blank=True, help_text="Static context, merged under whatever the caller passes")
+    output_schema = models.JSONField(default=default_schema, blank=True,
+                                     help_text='JSON Schema of the answer, e.g. {"properties": {"angle": {"type": "string"}}}. '
+                                               'Every declared property is required unless the schema lists "required".')
+    enabled = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+    def perform(self, context=None):
+        """Run the agent on its static context updated with `context`; return the AgentRun. A failure is recorded as a
+        run with an error and then raised as ValueError, so the caller's job surfaces it and nothing is lost."""
+        context = {**(self.context if isinstance(self.context, dict) else {}), **(context or {})}
+        if not self.enabled:
+            raise ValueError(f"Agent “{self.name}” is disabled.")
+        try:
+            output = agents.run(self.prompt, self.model, self.output_schema, context, self.temperature, self.slug)
+        except ValueError as exc:
+            self.runs.create(context=context, error=str(exc))
+            raise
+        run = self.runs.create(context=context, output=output)
+        path = settings.COMPANYSCAN_OUTPUT / "agents" / f"{self.slug}-{datetime.now(timezone.utc):%Y%m%d-%H%M%S}-{run.pk}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(output, ensure_ascii=False, indent=1), encoding="utf-8")
+        run.path = str(path)
+        run.save(update_fields=["path"])
+        log.info("agent %s wrote %s", self.slug, path)
+        return run
+
+
+class AgentRun(models.Model):
+    """One execution of an agent: what went in, what came back, where it was written, or why it failed."""
+    agent = models.ForeignKey(Agent, on_delete=models.CASCADE, related_name="runs")
+    context = models.JSONField(default=dict)
+    output = models.JSONField(default=dict, blank=True)
+    path = models.CharField(max_length=500, blank=True)  # The JSON file under output/agents/; empty for a failure.
+    error = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"{self.agent} ({'error' if self.error else 'ok'})"
 
 
 class GoogleConnection(models.Model):

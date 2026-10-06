@@ -4,7 +4,7 @@ from django.utils.html import format_html
 
 from ..dimensions import DIMENSIONS
 from . import tasks
-from .models import BlogPost, Job, Proposal, QuestionSet, Run, Site, sync
+from .models import Agent, AgentRun, BlogPost, Job, Proposal, QuestionSet, Run, Site, sync
 from .views import crawl_url
 
 admin.site.site_header = admin.site.site_title = "Company Footprint"
@@ -75,6 +75,39 @@ class BlogPostAdmin(admin.ModelAdmin):
     list_display = ["title", "site", "keyword", "status", "created_at"]
     list_filter = ["status", "site"]
     readonly_fields = ["site", "keyword", "status", "run", "profile", "created_at", "decided_at", "decided_by"]
+
+
+@admin.register(Agent)
+class AgentAdmin(admin.ModelAdmin):
+    """Write an agent here: its prompt, its model and temperature, and the JSON schema of its answer. "Run now" runs it on
+    its stored context alone, so you can see the JSON before any other code calls it."""
+    list_display = ["name", "slug", "model", "temperature", "enabled", "updated_at"]
+    list_filter = ["enabled"]
+    search_fields = ["name", "slug", "description"]
+    prepopulated_fields = {"slug": ["name"]}
+    actions = ["run_now"]
+
+    @admin.action(description="Run now with the stored context")
+    def run_now(self, request, queryset):
+        # ponytail: runs in the request. Add an "agent" kind to tasks.WORK if a prompt gets slow enough to time out.
+        for agent in queryset:
+            try:
+                run = agent.perform()
+            except ValueError as exc:
+                self.message_user(request, f"{agent}: {exc}", messages.ERROR)
+                continue
+            self.message_user(request, f"{agent}: wrote {run.path}", messages.SUCCESS)
+
+
+@admin.register(AgentRun)
+class AgentRunAdmin(admin.ModelAdmin):
+    """What each agent was given and what it answered. Read-only: it's the audit trail."""
+    list_display = ["agent", "created_at", "path", "error"]
+    list_filter = ["agent"]
+    readonly_fields = [f.name for f in AgentRun._meta.fields]
+
+    def has_add_permission(self, request):
+        return False  # Runs come from Agent.perform().
 
 
 @admin.register(Proposal)
