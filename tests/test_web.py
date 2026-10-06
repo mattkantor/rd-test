@@ -422,7 +422,8 @@ class WebTests(WebCase):
         self.assertContains(page, 'value="https://acme.test" disabled')
         self.assertNotContains(page, 'name="origin"')
         response = self.client.post(f"/site/{site.pk}/edit", {"origin": "https://evil.test", "business_name": "Acme Dental",
-                                                               "icp": "families", "city": "Austin", "state": "TX", "country": ""})
+                                                               "icp": "families", "city": "Austin", "state": "TX", "country": "",
+                                                               "blog_per_run": 1})
         self.assertEqual(response["location"], f"/site/{site.pk}")
         site.refresh_from_db()
         self.assertEqual((site.origin, site.business_name, site.location), ("https://acme.test", "Acme Dental", "Austin, TX"))

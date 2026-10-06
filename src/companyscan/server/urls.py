@@ -9,6 +9,8 @@ urlpatterns = [
     path("", portal.home, name="home"),
     path("login", portal.Login.as_view(), name="login"),
     path("logout", LogoutView.as_view(), name="logout"),
+    path("portal/content", portal.content),
+    path("portal/content/<int:pk>/<str:action>", portal.decide),
     path("portal/settings", portal.settings_page),
     path("portal/help", portal.help_page),
     path("portal/<slug:slug>", portal.tool),

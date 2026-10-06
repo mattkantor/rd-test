@@ -50,6 +50,13 @@ class Site(models.Model):
                                                help_text="What one new customer is worth over the relationship")
     target_customers = models.PositiveIntegerField("New customers wanted per year", null=True, blank=True,
                                                    help_text="How many new customers the business wants to win in a year")
+    # What the business does and the topics to rank for: the input to the scheduled blog drafts (blog/).
+    keywords = models.TextField(blank=True, help_text="Keywords to write posts for, one per line")
+    offering = models.TextField("What the business does", blank=True)
+    blog_every_days = models.PositiveIntegerField("Blog post every N days", null=True, blank=True, help_text="Leave blank to stop drafting posts")
+    blog_per_run = models.PositiveSmallIntegerField("Posts per run", default=1)
+    blog_repeat_keywords = models.BooleanField("Reuse keywords", default=False,
+                                               help_text="Allow a keyword again once every keyword was used in the last posts")
     place_id = models.CharField("Google place ID", max_length=255, blank=True,
                                 help_text="Filled in by the first crawl that finds the Google listing; clear it to search again")
     # The last LLM read of the site ({key, identity, ...}, see reputation.read_site): reused while the page text, ICP and
@@ -75,6 +82,11 @@ class Site(models.Model):
         multi = (("--person", self.people), ("--alias", self.aliases), ("--known-profile", self.profiles))
         return ([f"{flag}={value.strip()}" for flag, value in single if value.strip()]
                 + [f"{flag}={value}" for flag, text in multi for value in lines(text)])
+
+    def profile(self):
+        """The full profile the blog generator writes from (also stored on each post as its source version)."""
+        return {"business_name": self.business_name, "icp": self.icp, "category": self.category, "location": self.location,
+                "people": lines(self.people), "aliases": lines(self.aliases), "keywords": lines(self.keywords), "offering": self.offering}
 
     def question_key(self):
         """The profile fields buyer questions are written for; changing one gets a new question set."""
@@ -139,6 +151,28 @@ def remember(site, bundle):
         elif items and not found.items:  # Emptied by "new questions": this crawl wrote the new set.
             found.items, found.run = items, bundle.name
             found.save()
+
+
+class BlogPost(models.Model):
+    """A generated post. Always starts as a draft; only the customer's approval moves it on (publishing is a later step)."""
+    STATES = [("draft", "Draft"), ("approved", "Approved"), ("rejected", "Rejected")]
+    site = models.ForeignKey(Site, on_delete=models.CASCADE, related_name="posts")
+    title = models.CharField(max_length=255)
+    meta_description = models.CharField(max_length=255, blank=True)
+    body = models.TextField()  # Markdown.
+    keyword = models.CharField(max_length=255)
+    status = models.CharField(max_length=10, choices=STATES, default="draft")
+    run = models.CharField(max_length=255, blank=True)  # The crawl whose text it was written from.
+    profile = models.JSONField(default=dict)  # Site.profile() when it was written.
+    created_at = models.DateTimeField(auto_now_add=True)
+    decided_at = models.DateTimeField(null=True, blank=True)
+    decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return self.title
 
 
 class Run(models.Model):
@@ -242,8 +276,8 @@ def sync(root=None):
 
 
 class Job(models.Model):
-    """A crawl, report or re-crawl, run by the Huey worker. At most one running job per site (DB constraint)."""
-    KINDS = [("crawl", "Crawl"), ("recrawl", "Re-crawl"), ("report", "Report")]
+    """A crawl, report, re-crawl or blog drafting run, run by the Huey worker. At most one running job per site (DB constraint)."""
+    KINDS = [("crawl", "Crawl"), ("recrawl", "Re-crawl"), ("report", "Report"), ("blog", "Blog posts")]
     STATES = [("running", "Running"), ("done", "Done"), ("error", "Error")]
     site = models.ForeignKey(Site, on_delete=models.CASCADE, related_name="jobs")
     kind = models.CharField(max_length=10, choices=KINDS)
