@@ -187,7 +187,7 @@ def public_site(request, public_id):
 # The origin is the site's identity (runs attach to it by URL), so it is set once, by the first crawl, never edited.
 SiteForm = modelform_factory(Site, fields=["business_name", "icp", "category", "people", "aliases", "profiles",
                                            "city", "state", "country", "customer_ltv", "target_customers", "place_id",
-                                           "offering", "keywords", "blog_every_days", "blog_per_run", "blog_repeat_keywords"])
+                                           "phone", "offering", "keywords", "blog_every_days", "blog_per_run", "blog_repeat_keywords"])
 
 
 def suggestions(site):

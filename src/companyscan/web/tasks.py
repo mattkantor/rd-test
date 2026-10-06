@@ -10,6 +10,7 @@ from huey import crontab
 from huey.contrib.djhuey import db_periodic_task, db_task
 
 from .. import blog
+from ..google import proposals
 from ..cli import directory_name, parser, run
 from ..report.analyze import analyze
 from ..report.pdf import render_pdf
@@ -90,6 +91,11 @@ def draft_posts(job, progress):
     return f"Drafted {made} post(s) for approval"
 
 
+def google_sync(job, progress):
+    proposals.sync_site(job.site)
+    return "Google listing read; proposals are waiting for approval"
+
+
 def due_sites(now):
     """Sites with a schedule and a keyword to use, a crawl, and a last draft older than their frequency (or none yet)."""
     for site in Site.objects.filter(blog_every_days__isnull=False, blog_every_days__gt=0).exclude(keywords=""):
@@ -108,7 +114,14 @@ def schedule_blogs():
         start(site.origin, "blog", "Drafting blog posts…", site.runs.first().name)
 
 
-WORK = {"crawl": crawl, "recrawl": recrawl, "report": report, "blog": draft_posts}
+@db_periodic_task(crontab(hour="6", minute="0"))
+def sync_google():
+    """Daily: re-read each connected listing, so new reviews, questions and drifted fields get proposals."""
+    for site in Site.objects.filter(google_connections__revoked_at__isnull=True, google_connections__location__isnull=False).distinct():
+        start(site.origin, "google", "Reading the Google listing…", "")
+
+
+WORK = {"crawl": crawl, "recrawl": recrawl, "report": report, "blog": draft_posts, "google": google_sync}
 
 
 @db_task()

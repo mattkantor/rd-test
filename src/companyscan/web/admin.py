@@ -4,7 +4,7 @@ from django.utils.html import format_html
 
 from ..dimensions import DIMENSIONS
 from . import tasks
-from .models import BlogPost, Job, QuestionSet, Run, Site, sync
+from .models import BlogPost, Job, Proposal, QuestionSet, Run, Site, sync
 from .views import crawl_url
 
 admin.site.site_header = admin.site.site_title = "Company Footprint"
@@ -75,3 +75,14 @@ class BlogPostAdmin(admin.ModelAdmin):
     list_display = ["title", "site", "keyword", "status", "created_at"]
     list_filter = ["status", "site"]
     readonly_fields = ["site", "keyword", "status", "run", "profile", "created_at", "decided_at", "decided_by"]
+
+
+@admin.register(Proposal)
+class ProposalAdmin(admin.ModelAdmin):
+    """The audit trail of Google changes: before and after values, who decided and what Google answered. Read-only."""
+    list_display = ["kind", "target", "status", "location", "created_at", "decided_by"]
+    list_filter = ["kind", "status"]
+    readonly_fields = [f.name for f in Proposal._meta.fields]
+
+    def has_add_permission(self, request):
+        return False

@@ -73,5 +73,5 @@ def help_page(request):
 
 # Profile fields shown read-only: (attribute, label).
 FIELDS = [("business_name", "Business name"), ("icp", "ICP"), ("category", "Category"), ("location", "Location"), ("people", "People"),
-          ("aliases", "Other names"), ("profiles", "Official profiles"), ("offering", "What the business does"),
+          ("aliases", "Other names"), ("profiles", "Official profiles"), ("phone", "Phone"), ("offering", "What the business does"),
           ("keywords", "Keywords")]
